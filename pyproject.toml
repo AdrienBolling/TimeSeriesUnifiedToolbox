@@ -1,0 +1,25 @@
+[project]
+name = "tsut"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "jaxtyping>=0.3.3",
+    "pandas>=2.3.3",
+    "pyarrow>=21.0.0",
+    "ray[all]>=2.50.0",
+]
+
+[dependency-groups]
+postgres = [
+    "psycopg2-binary>=2.9.11",
+]
+dev = [
+    "pyarrow-stubs>=20.0.0.20250928",
+]
+
+[tool.pyright]
+reportMissingTypeStubs = false
+reportMissingImports = true
+typeCheckingMode = "off"
