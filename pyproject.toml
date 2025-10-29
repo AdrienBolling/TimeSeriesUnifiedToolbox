@@ -5,21 +5,36 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "jaxtyping>=0.3.3",
-    "pandas>=2.3.3",
-    "pyarrow>=21.0.0",
-    "ray[all]>=2.50.0",
+  "jaxtyping>=0.3.3",
+  "pandas>=2.3.3",
+  "pyarrow>=21.0.0",
+  "ray[all]>=2.50.0",
+  "torch>=2.9.0",
 ]
 
 [dependency-groups]
-postgres = [
-    "psycopg2-binary>=2.9.11",
-]
+postgres = ["psycopg2-binary>=2.9.11"]
 dev = [
-    "pyarrow-stubs>=20.0.0.20250928",
+  "pre-commit>=4.3.0",
+  "pyarrow-stubs>=20.0.0.20250928",
+  "ruff>=0.14.2",
+  "ty>=0.0.1a24",
 ]
 
-[tool.pyright]
-reportMissingTypeStubs = false
-reportMissingImports = true
-typeCheckingMode = "off"
+[tool.ruff.lint]
+select = [
+  # pycodestyle
+  "E",
+  # Pyflakes
+  "F",
+  # pyupgrade
+  "UP",
+  # flake8-bugbear
+  "B",
+  # flake8-simplify
+  "SIM",
+  # isort
+  "I",
+  # ANNOTATIONS
+  "ANN",
+]
