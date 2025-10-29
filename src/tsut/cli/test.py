@@ -1,2 +1,0 @@
-a = dict()
-print(a)
