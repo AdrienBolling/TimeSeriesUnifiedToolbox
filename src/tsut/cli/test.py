@@ -1,3 +1,2 @@
-import torch
-
 a = dict()
+print(a)
