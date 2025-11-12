@@ -1,4 +1,4 @@
-name: Build and deploy
+name: Build and deploy MKDocs
 
 on:
   workflow_dispatch: # Allow manual triggers
