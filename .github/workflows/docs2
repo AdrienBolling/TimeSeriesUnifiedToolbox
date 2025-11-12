@@ -1,0 +1,37 @@
+name: Build & Deploy Docs
+
+on:
+  push:
+    branches: [main] # adjust if you use a different default branch
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13" # or your package’s version
+
+      - name: Install package (editable) and doc deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install mkdocs mkdocs-material "mkdocstrings[python]" mkdocs-autorefs mkdocs-section-index mkdocs-literate-nav
+
+      - name: Build site
+        run: mkdocs build --strict
+
+      - name: Deploy to GitHub Pages
+        # pushes the site to the special Pages artifact/branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
