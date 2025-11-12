@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
   "jaxtyping>=0.3.3",
   "pandas>=2.3.3",
+  "psycopg2-binary>=2.9.11",
   "pyarrow>=21.0.0",
   "ray[all]>=2.50.0",
   "torch>=2.9.0",
@@ -15,6 +16,12 @@ dependencies = [
 [dependency-groups]
 postgres = ["psycopg2-binary>=2.9.11"]
 dev = [
+  "mkdocs>=1.6.1",
+  "mkdocs-autorefs>=1.4.3",
+  "mkdocs-literate-nav>=0.6.2",
+  "mkdocs-material>=9.7.0",
+  "mkdocs-section-index>=0.3.10",
+  "mkdocstrings[python]>=0.30.1",
   "pre-commit>=4.3.0",
   "pyarrow-stubs>=20.0.0.20250928",
   "ruff>=0.14.2",
@@ -38,3 +45,7 @@ select = [
   # ANNOTATIONS
   "ANN",
 ]
+
+[tool.pyright]
+typeCheckingMode = "off"
+diagnosticMode = "off"
