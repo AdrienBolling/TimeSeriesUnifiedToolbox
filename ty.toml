@@ -1,6 +1,0 @@
-
-[terminal]
-error-on-warning = false
-
-[environment]
-python = ".venv"

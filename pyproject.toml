@@ -9,43 +9,35 @@ dependencies = [
   "pandas>=2.3.3",
   "psycopg2-binary>=2.9.11",
   "pyarrow>=21.0.0",
+  "pydantic>=2.12.2",
+  "pydantic-settings>=2.12.0",
   "ray[all]>=2.50.0",
   "torch>=2.9.0",
 ]
 
 [dependency-groups]
-postgres = ["psycopg2-binary>=2.9.11"]
-dev = [
-  "mkdocs>=1.6.1",
-  "mkdocs-autorefs>=1.4.3",
-  "mkdocs-literate-nav>=0.6.2",
-  "mkdocs-material>=9.7.0",
-  "mkdocs-section-index>=0.3.10",
-  "mkdocstrings[python]>=0.30.1",
-  "pre-commit>=4.3.0",
-  "pyarrow-stubs>=20.0.0.20250928",
-  "ruff>=0.14.2",
-  "ty>=0.0.1a24",
-]
+dev = ["pre-commit>=4.3.0", "ruff>=0.14.2", "ty>=0.0.1a24"]
 
 [tool.ruff.lint]
 select = [
-  # pycodestyle
-  "E",
-  # Pyflakes
-  "F",
-  # pyupgrade
-  "UP",
-  # flake8-bugbear
-  "B",
-  # flake8-simplify
-  "SIM",
-  # isort
-  "I",
-  # ANNOTATIONS
-  "ANN",
+  "ALL",
+] # Select all the rules by default, we'll exclude explicitly below
+
+ignore = [
+  ### Modules
+  "COM",
+  "DJ",
+  "EXE",
+  "T10",
+  "TID",
+  "TD",  # TODO rules
+
+  ### Specific rules
+  "E501",   # Lines too long
+  "COM819", # Trailing commas
+  "FIX002", # Can't commit when TODO present
+  "D104",   # No public docstring in package
 ]
 
-[tool.pyright]
-typeCheckingMode = "off"
-diagnosticMode = "off"
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
