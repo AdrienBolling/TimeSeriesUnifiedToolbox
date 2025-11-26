@@ -12,7 +12,7 @@ repos:
       # Run the linter.
       - id: ruff-check
         types_or: [python, pyi]
-        args: [--fix, --config, pyproject.toml]
+        args: [--config, pyproject.toml]
       # Run the formatter.
       - id: ruff-format
   - repo: local
