@@ -10,7 +10,13 @@ D = TypeVar("D", bound="Data")
 K = TypeVar("K")
 
 
-type ContextData = dict[str, Any] | BaseModel | NamedTuple
+type ContextData = (
+    dict[str, Any] | BaseModel | NamedTuple
+)  # Abstarct type to alias all types used to pass context data. (Such as runtime information, etc.)
+
+type ConfigData = (
+    dict[str, Any] | BaseModel | NamedTuple
+)  # Abstract type to alias all types used to pass configuraiton data. (Such as hyperparameters, etc.)
 
 
 class Data:
