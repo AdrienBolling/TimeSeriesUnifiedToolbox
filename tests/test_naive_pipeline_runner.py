@@ -1,6 +1,5 @@
 """Tests for the NaivePipelineRunner implementation."""
 
-import networkx as nx
 import pytest
 
 from tsut.core.common.data.types import ContextData, Data

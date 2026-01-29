@@ -5,7 +5,6 @@ that executes nodes in topological order without optimizations.
 """
 
 from enum import StrEnum
-from typing import Any
 
 import networkx as nx
 
@@ -134,10 +133,10 @@ class NaivePipelineRunner:
         if mode == ExecutionMode.FIT:
             node.node_fit(inputs)
             return None
-        elif mode == ExecutionMode.TRANSFORM:
+        if mode == ExecutionMode.TRANSFORM:
             return node.node_transform(inputs)
-        else:  # FIT_TRANSFORM
-            return node.node_fit_transform(inputs)
+        # FIT_TRANSFORM
+        return node.node_fit_transform(inputs)
 
     def run(
         self, mode: ExecutionMode = ExecutionMode.FIT_TRANSFORM
