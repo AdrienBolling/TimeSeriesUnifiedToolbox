@@ -1,15 +1,11 @@
 """Define the base Data types for the TSUT Framework."""
 
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 import numpy as np
 import pandas as pd
+from jaxtyping import Float
 from pydantic import BaseModel
-
-# jaxtyping is used for runtime type checking and documentation
-# Import is conditional to avoid issues with static type checkers
-if TYPE_CHECKING:
-    from jaxtyping import Float  # noqa: F401
 
 D = TypeVar("D", bound="Data")
 K = TypeVar("K")
@@ -52,7 +48,7 @@ class TimeSeries(Data):
     def __init__(
         self,
         times: pd.DatetimeIndex | pd.RangeIndex | pd.Index,
-        values: np.ndarray,  # Float[np.ndarray, "batch dimension timestep value"]
+        values: Float[np.ndarray, "batch dimension timestep value"],
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Create a 'TimeSeries' from a time index 'times' and a numpy array of 'values'.
@@ -60,7 +56,6 @@ class TimeSeries(Data):
         Args:
             times: Time index for the series (DatetimeIndex, RangeIndex, or Index)
             values: 4D numpy array structured as (batch, dimension, timestep, value)
-                   Type: Float[np.ndarray, "batch dimension timestep value"]
             metadata: Optional metadata dictionary
 
         Raises:
@@ -86,12 +81,11 @@ class TimeSeries(Data):
         return self._times
 
     @property
-    def values(self) -> np.ndarray:  # Float[np.ndarray, "batch dimension timestep value"]
+    def values(self) -> Float[np.ndarray, "batch dimension timestep value"]:
         """Return the values array.
 
         Returns:
             4D numpy array with shape (batch, dimension, timestep, value).
-            Type: Float[np.ndarray, "batch dimension timestep value"]
 
         """
         return self._values
@@ -162,7 +156,7 @@ class TabularData(Data):
 
     def __init__(
         self,
-        values: np.ndarray,  # Float[np.ndarray, "batch feature"]
+        values: Float[np.ndarray, "batch feature"],
         feature_names: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
@@ -170,7 +164,6 @@ class TabularData(Data):
 
         Args:
             values: 2D numpy array structured as (batch, feature)
-                   Type: Float[np.ndarray, "batch feature"]
             feature_names: Optional list of feature names
             metadata: Optional metadata dictionary
 
@@ -192,12 +185,11 @@ class TabularData(Data):
         self._metadata = metadata or {}
 
     @property
-    def values(self) -> np.ndarray:  # Float[np.ndarray, "batch feature"]
+    def values(self) -> Float[np.ndarray, "batch feature"]:
         """Return the values array.
 
         Returns:
             2D numpy array with shape (batch, feature).
-            Type: Float[np.ndarray, "batch feature"]
 
         """
         return self._values
