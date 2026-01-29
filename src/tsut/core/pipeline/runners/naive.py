@@ -53,11 +53,16 @@ class NaivePipelineRunner:
         """Ensure the pipeline is compiled before execution.
 
         This validates the DAG structure and prepares the pipeline for execution.
+        
+        Note:
+            Directly accesses Pipeline's private attributes since no public compile()
+            method is available. This is consistent with the runner's responsibility
+            to manage pipeline execution state.
         """
         if not self.pipeline.compiled():
-            # The pipeline should handle its own compilation logic
-            # For now, we just validate and mark as compiled
+            # Validate the pipeline structure
             self.pipeline._validate()
+            # Mark the pipeline as compiled
             self.pipeline._compiled = True
 
     def _get_execution_order(self) -> list[str]:
@@ -124,6 +129,9 @@ class NaivePipelineRunner:
         Returns:
             Node outputs if mode is transform or fit_transform, None for fit only.
 
+        Raises:
+            ValueError: If the specified node is not found in the pipeline.
+
         """
         node = self.pipeline.node_objects.get(node_name)
         if node is None:
@@ -148,6 +156,9 @@ class NaivePipelineRunner:
 
         Returns:
             Dictionary mapping node names to their output data.
+
+        Raises:
+            ValueError: If the pipeline graph is not a valid DAG.
 
         """
         # Ensure pipeline is compiled

@@ -373,15 +373,21 @@ class TestNaivePipelineRunner:
 
     def test_cyclic_graph_raises_error(self) -> None:
         """Test that a cyclic graph raises an error."""
-        # Create a pipeline with a cycle
-        node_config = NodeConfig(
+        # Create separate node configs for each node to avoid ID conflicts
+        node_a_config = NodeConfig(
+            node_type=NodeType.TRANSFORM,
+            in_ports={"input": Port(type=MockData, desc="Input", mode=["train"])},
+            out_ports={"output": Port(type=MockData, desc="Output", mode=["train"])},
+        )
+        
+        node_b_config = NodeConfig(
             node_type=NodeType.TRANSFORM,
             in_ports={"input": Port(type=MockData, desc="Input", mode=["train"])},
             out_ports={"output": Port(type=MockData, desc="Output", mode=["train"])},
         )
 
         pipeline_config = PipelineConfig(
-            nodes={"A": node_config, "B": node_config},
+            nodes={"A": node_a_config, "B": node_b_config},
             edges=[
                 Edge(source="A", target="B", ports_map={"output": "input"}),
                 Edge(source="B", target="A", ports_map={"output": "input"}),
