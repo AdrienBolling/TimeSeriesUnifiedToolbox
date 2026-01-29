@@ -2,6 +2,12 @@
 
 This module provides a straightforward, sequential implementation of the PipelineRunner
 that executes nodes in topological order without optimizations.
+
+Key Design Principles:
+- All nodes produce outputs in both TRAIN and PREDICT modes
+- TRAIN mode: fits nodes and transforms data for downstream dependencies
+- PREDICT mode: only transforms data (no fitting)
+- EVALUATE mode: placeholder for future performance evaluation
 """
 
 from enum import StrEnum
@@ -16,9 +22,9 @@ from tsut.core.pipeline.runners.base import RunnerConfig
 class ExecutionMode(StrEnum):
     """Define execution modes for the pipeline runner."""
 
-    FIT = "fit"
-    TRANSFORM = "transform"
-    FIT_TRANSFORM = "fit_transform"
+    TRAIN = "train"
+    PREDICT = "predict"
+    EVALUATE = "evaluate"
 
 
 class NaivePipelineRunner:
@@ -27,6 +33,13 @@ class NaivePipelineRunner:
     This runner executes pipeline nodes sequentially in topological order,
     ensuring dependencies are satisfied before execution. It stores all
     intermediate results in memory for simplicity.
+
+    Key Features:
+    - Sequential execution (no parallelization)
+    - All nodes produce outputs in all modes (needed by downstream nodes)
+    - TRAIN mode: fits nodes and produces outputs
+    - PREDICT mode: only transforms (no fitting)
+    - EVALUATE mode: placeholder for future evaluation logic
 
     The implementation focuses on correctness over performance and does not
     include optimizations like parallel execution or lazy evaluation.
@@ -118,16 +131,19 @@ class NaivePipelineRunner:
         node_name: str,
         inputs: dict[str, Data | ContextData],
         mode: ExecutionMode,
-    ) -> dict[str, Data | ContextData] | None:
+    ) -> dict[str, Data | ContextData]:
         """Execute a single node with the given inputs.
+
+        In both TRAIN and PREDICT modes, nodes must produce outputs for downstream nodes.
+        The difference is that TRAIN mode also fits the node before transforming.
 
         Args:
             node_name: Name of the node to execute.
             inputs: Input data for the node.
-            mode: Execution mode (fit, transform, or fit_transform).
+            mode: Execution mode (train, predict, or evaluate).
 
         Returns:
-            Node outputs if mode is transform or fit_transform, None for fit only.
+            Node outputs for downstream nodes.
 
         Raises:
             ValueError: If the specified node is not found in the pipeline.
@@ -138,24 +154,26 @@ class NaivePipelineRunner:
             message = f"Node '{node_name}' not found in pipeline node objects."
             raise ValueError(message)
 
-        if mode == ExecutionMode.FIT:
-            node.node_fit(inputs)
-            return None
-        if mode == ExecutionMode.TRANSFORM:
+        if mode == ExecutionMode.TRAIN:
+            # In train mode, fit the node then transform to produce outputs
+            return node.node_fit_transform(inputs)
+        if mode == ExecutionMode.PREDICT:
+            # In predict mode, only transform (no fitting)
             return node.node_transform(inputs)
-        # FIT_TRANSFORM
-        return node.node_fit_transform(inputs)
+        # EVALUATE mode - for now, same as predict (placeholder for future)
+        return node.node_transform(inputs)
 
     def run(
-        self, mode: ExecutionMode = ExecutionMode.FIT_TRANSFORM
+        self, mode: ExecutionMode = ExecutionMode.TRAIN
     ) -> dict[str, dict[str, Data | ContextData]]:
         """Run the pipeline in the specified mode.
 
         Args:
-            mode: Execution mode for the pipeline.
+            mode: Execution mode for the pipeline (train, predict, or evaluate).
 
         Returns:
             Dictionary mapping node names to their output data.
+            For sink nodes or leaf nodes, returns their final outputs.
 
         Raises:
             ValueError: If the pipeline graph is not a valid DAG.
@@ -175,43 +193,64 @@ class NaivePipelineRunner:
             # Gather inputs from predecessors
             inputs = self._gather_node_inputs(node_name)
 
-            # Execute the node
+            # Execute the node - always produces outputs for downstream nodes
             outputs = self._execute_node(node_name, inputs, mode)
 
-            # Store outputs for downstream nodes (except for fit-only mode)
-            if outputs is not None:
-                self._node_outputs[node_name] = outputs
+            # Store outputs for downstream nodes
+            self._node_outputs[node_name] = outputs
 
         return self._node_outputs
 
-    def train(self) -> None:
-        """Train the pipeline by executing all nodes in fit_transform mode.
+    def get_sink_outputs(self) -> dict[str, dict[str, Data | ContextData]]:
+        """Get outputs from sink nodes or leaf nodes (nodes with no successors).
 
-        This method fits all nodes in the pipeline and transforms data through them.
+        Returns:
+            Dictionary mapping sink/leaf node names to their output data.
         """
-        self.run(mode=ExecutionMode.FIT_TRANSFORM)
+        sink_outputs = {}
+        
+        for node_name in self.pipeline.node_objects:
+            node = self.pipeline.node_objects[node_name]
+            
+            # Check if it's a sink node by type
+            if hasattr(node, 'node_type') and node.node_type.value == "sink":
+                if node_name in self._node_outputs:
+                    sink_outputs[node_name] = self._node_outputs[node_name]
+            # Or if it's a leaf node (no successors)
+            elif not list(self.pipeline._graph.successors(node_name)):
+                if node_name in self._node_outputs:
+                    sink_outputs[node_name] = self._node_outputs[node_name]
+        
+        return sink_outputs
 
-    def fit(self) -> None:
-        """Fit the pipeline by executing all nodes in fit mode.
+    def train(self) -> dict[str, dict[str, Data | ContextData]]:
+        """Train the pipeline by executing all nodes in train mode.
 
-        This method only fits nodes without transforming data.
-        """
-        self.run(mode=ExecutionMode.FIT)
-
-    def transform(self) -> dict[str, dict[str, Data | ContextData]]:
-        """Transform data through the pipeline without fitting.
+        This method fits all nodes in the pipeline and transforms data through them,
+        ensuring each node gets the outputs from its predecessors.
 
         Returns:
             Dictionary mapping node names to their output data.
-
         """
-        return self.run(mode=ExecutionMode.TRANSFORM)
+        return self.run(mode=ExecutionMode.TRAIN)
 
-    def fit_transform(self) -> dict[str, dict[str, Data | ContextData]]:
-        """Fit and transform data through the pipeline.
+    def predict(self) -> dict[str, dict[str, Data | ContextData]]:
+        """Run prediction through the pipeline without fitting.
+
+        This method only transforms data through the pipeline without fitting any nodes.
 
         Returns:
             Dictionary mapping node names to their output data.
-
         """
-        return self.run(mode=ExecutionMode.FIT_TRANSFORM)
+        return self.run(mode=ExecutionMode.PREDICT)
+
+    def evaluate(self) -> dict[str, dict[str, Data | ContextData]]:
+        """Evaluate the pipeline performance.
+
+        This method is a placeholder for future evaluation logic.
+        Currently behaves the same as predict.
+
+        Returns:
+            Dictionary mapping node names to their output data.
+        """
+        return self.run(mode=ExecutionMode.EVALUATE)

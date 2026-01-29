@@ -41,6 +41,13 @@ class MockNode(Node[MockData, MockData]):
             else:
                 output[key] = value
         return output
+    
+    def node_fit_transform(
+        self, data: dict[str, MockData | ContextData]
+    ) -> dict[str, MockData | ContextData]:
+        """Mock fit_transform implementation."""
+        self.fit_called = True
+        return self.node_transform(data)
 
 
 class MockSourceNode(MockNode):
@@ -52,6 +59,13 @@ class MockSourceNode(MockNode):
         """Generate mock data."""
         self.transform_called = True
         return {"output": MockData(value=1)}
+    
+    def node_fit_transform(
+        self, data: dict[str, MockData | ContextData]
+    ) -> dict[str, MockData | ContextData]:
+        """Mock fit_transform implementation."""
+        self.fit_called = True
+        return self.node_transform(data)
 
 
 def create_simple_pipeline() -> Pipeline:
@@ -209,68 +223,71 @@ class TestNaivePipelineRunner:
         assert isinstance(inputs["input"], MockData)
         assert inputs["input"].value == 5
 
-    def test_execute_node_fit_mode(self) -> None:
-        """Test executing a node in fit mode."""
+    def test_execute_node_train_mode(self) -> None:
+        """Test executing a node in train mode."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
         node = pipeline.node_objects["B"]
         inputs = {"input": MockData(value=1)}
 
-        result = runner._execute_node("B", inputs, ExecutionMode.FIT)
+        result = runner._execute_node("B", inputs, ExecutionMode.TRAIN)
 
-        assert result is None
+        assert result is not None
         assert node.fit_called
-        assert not node.transform_called
+        assert node.transform_called
 
-    def test_execute_node_transform_mode(self) -> None:
-        """Test executing a node in transform mode."""
+    def test_execute_node_predict_mode(self) -> None:
+        """Test executing a node in predict mode."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
         node = pipeline.node_objects["B"]
         inputs = {"input": MockData(value=1)}
 
-        result = runner._execute_node("B", inputs, ExecutionMode.TRANSFORM)
+        result = runner._execute_node("B", inputs, ExecutionMode.PREDICT)
 
         assert result is not None
         assert not node.fit_called
         assert node.transform_called
 
-    def test_execute_node_fit_transform_mode(self) -> None:
-        """Test executing a node in fit_transform mode."""
+    def test_execute_node_evaluate_mode(self) -> None:
+        """Test executing a node in evaluate mode."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
         node = pipeline.node_objects["B"]
         inputs = {"input": MockData(value=1)}
 
-        result = runner._execute_node("B", inputs, ExecutionMode.FIT_TRANSFORM)
+        result = runner._execute_node("B", inputs, ExecutionMode.EVALUATE)
 
         assert result is not None
-        assert node.fit_called
+        assert not node.fit_called
         assert node.transform_called
 
-    def test_run_fit_mode(self) -> None:
-        """Test running the pipeline in fit mode."""
+    def test_run_train_mode(self) -> None:
+        """Test running the pipeline in train mode."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
-        outputs = runner.run(mode=ExecutionMode.FIT)
+        outputs = runner.run(mode=ExecutionMode.TRAIN)
 
-        # In fit mode, no outputs should be stored
-        assert outputs == {}
+        # In train mode, all outputs should be stored
+        assert "A" in outputs
+        assert "B" in outputs
 
-        # But nodes should have been fitted
+        # Nodes should have been fitted and transformed
         assert pipeline.node_objects["A"].fit_called
+        assert pipeline.node_objects["A"].transform_called
         assert pipeline.node_objects["B"].fit_called
+        assert pipeline.node_objects["B"].transform_called
 
-    def test_run_transform_mode(self) -> None:
-        """Test running the pipeline in transform mode."""
+    def test_run_predict_mode(self) -> None:
+        """Test running the pipeline in predict mode."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
-        outputs = runner.run(mode=ExecutionMode.TRANSFORM)
+        outputs = runner.run(mode=ExecutionMode.PREDICT)
 
         # Outputs should be stored
         assert "A" in outputs
@@ -282,55 +299,43 @@ class TestNaivePipelineRunner:
         assert pipeline.node_objects["B"].transform_called
         assert not pipeline.node_objects["B"].fit_called
 
-    def test_run_fit_transform_mode(self) -> None:
-        """Test running the pipeline in fit_transform mode."""
-        pipeline = create_simple_pipeline()
-        runner = NaivePipelineRunner(pipeline)
-
-        outputs = runner.run(mode=ExecutionMode.FIT_TRANSFORM)
-
-        # Outputs should be stored
-        assert "A" in outputs
-        assert "B" in outputs
-
-        # Nodes should have both fit and transformed
-        assert pipeline.node_objects["A"].fit_called
-        assert pipeline.node_objects["A"].transform_called
-        assert pipeline.node_objects["B"].fit_called
-        assert pipeline.node_objects["B"].transform_called
-
     def test_train_method(self) -> None:
         """Test the train convenience method."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
-        runner.train()
+        outputs = runner.train()
 
-        # Should call fit_transform
+        # Should fit and transform
         assert pipeline.node_objects["A"].fit_called
         assert pipeline.node_objects["A"].transform_called
+        assert outputs is not None
+        assert "A" in outputs
+        assert "B" in outputs
 
-    def test_fit_method(self) -> None:
-        """Test the fit convenience method."""
+    def test_predict_method(self) -> None:
+        """Test the predict convenience method."""
         pipeline = create_simple_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
-        runner.fit()
-
-        # Should only fit
-        assert pipeline.node_objects["A"].fit_called
-        assert not pipeline.node_objects["A"].transform_called
-
-    def test_transform_method(self) -> None:
-        """Test the transform convenience method."""
-        pipeline = create_simple_pipeline()
-        runner = NaivePipelineRunner(pipeline)
-
-        outputs = runner.transform()
+        outputs = runner.predict()
 
         # Should only transform
         assert not pipeline.node_objects["A"].fit_called
         assert pipeline.node_objects["A"].transform_called
+        assert outputs is not None
+
+    def test_evaluate_method(self) -> None:
+        """Test the evaluate convenience method."""
+        pipeline = create_simple_pipeline()
+        runner = NaivePipelineRunner(pipeline)
+
+        outputs = runner.evaluate()
+
+        # Should only transform (same as predict for now)
+        assert not pipeline.node_objects["A"].fit_called
+        assert pipeline.node_objects["A"].transform_called
+        assert outputs is not None
         assert outputs is not None
 
     def test_fit_transform_method(self) -> None:
@@ -350,7 +355,7 @@ class TestNaivePipelineRunner:
         pipeline = create_complex_pipeline()
         runner = NaivePipelineRunner(pipeline)
 
-        outputs = runner.run(mode=ExecutionMode.FIT_TRANSFORM)
+        outputs = runner.run(mode=ExecutionMode.TRAIN)
 
         # All nodes should have outputs
         assert "A" in outputs
@@ -369,7 +374,7 @@ class TestNaivePipelineRunner:
         runner = NaivePipelineRunner(pipeline)
 
         with pytest.raises(ValueError, match="not found"):
-            runner._execute_node("NonExistent", {}, ExecutionMode.FIT)
+            runner._execute_node("NonExistent", {}, ExecutionMode.TRAIN)
 
     def test_cyclic_graph_raises_error(self) -> None:
         """Test that a cyclic graph raises an error."""
@@ -397,3 +402,37 @@ class TestNaivePipelineRunner:
         # This should raise an error during validation
         with pytest.raises(ValueError, match="directed acyclic graph"):
             Pipeline(config=pipeline_config)
+
+    def test_get_sink_outputs(self) -> None:
+        """Test getting sink/leaf node outputs."""
+        pipeline = create_simple_pipeline()
+        runner = NaivePipelineRunner(pipeline)
+
+        # Run the pipeline
+        runner.run(mode=ExecutionMode.TRAIN)
+
+        # Get sink outputs (B is a leaf node - no successors)
+        sink_outputs = runner.get_sink_outputs()
+
+        # B should be in sink outputs as it has no successors
+        assert "B" in sink_outputs
+        # A should not be in sink outputs as it has a successor (B)
+        assert "A" not in sink_outputs
+
+    def test_get_sink_outputs_complex(self) -> None:
+        """Test getting sink outputs from complex pipeline."""
+        pipeline = create_complex_pipeline()
+        runner = NaivePipelineRunner(pipeline)
+
+        # Run the pipeline
+        runner.run(mode=ExecutionMode.TRAIN)
+
+        # Get sink outputs
+        sink_outputs = runner.get_sink_outputs()
+
+        # D should be in sink outputs as it has no successors
+        assert "D" in sink_outputs
+        # A, B, C should not be in sink outputs as they have successors
+        assert "A" not in sink_outputs
+        assert "B" not in sink_outputs
+        assert "C" not in sink_outputs
