@@ -173,8 +173,8 @@ class NaivePipelineRunner:
             mode: Execution mode for the pipeline (train, predict, or evaluate).
 
         Returns:
-            Dictionary mapping node names to their output data.
-            For sink nodes or leaf nodes, returns their final outputs.
+            Dictionary mapping ALL node names to their output data.
+            Use get_sink_outputs() to retrieve only final outputs from sink/leaf nodes.
 
         Raises:
             ValueError: If the pipeline graph is not a valid DAG.
@@ -214,10 +214,12 @@ class NaivePipelineRunner:
         for node_name in self.pipeline.node_objects:
             node = self.pipeline.node_objects[node_name]
 
-            # Check if it's a sink node by type
-            if (hasattr(node, "node_type") and node.node_type.value == "sink") or not list(self.pipeline._graph.successors(node_name)):
-                if node_name in self._node_outputs:
-                    sink_outputs[node_name] = self._node_outputs[node_name]
+            # Check if it's a sink node by type or if it's a leaf node (no successors)
+            is_sink = hasattr(node, "node_type") and node.node_type.value == "sink"
+            is_leaf = not any(self.pipeline._graph.successors(node_name))
+            
+            if (is_sink or is_leaf) and node_name in self._node_outputs:
+                sink_outputs[node_name] = self._node_outputs[node_name]
 
         return sink_outputs
 

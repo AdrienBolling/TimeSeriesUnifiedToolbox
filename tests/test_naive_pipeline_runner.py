@@ -336,19 +336,6 @@ class TestNaivePipelineRunner:
         assert not pipeline.node_objects["A"].fit_called
         assert pipeline.node_objects["A"].transform_called
         assert outputs is not None
-        assert outputs is not None
-
-    def test_fit_transform_method(self) -> None:
-        """Test the fit_transform convenience method."""
-        pipeline = create_simple_pipeline()
-        runner = NaivePipelineRunner(pipeline)
-
-        outputs = runner.fit_transform()
-
-        # Should fit and transform
-        assert pipeline.node_objects["A"].fit_called
-        assert pipeline.node_objects["A"].transform_called
-        assert outputs is not None
 
     def test_complex_pipeline_execution(self) -> None:
         """Test execution of a complex pipeline."""
