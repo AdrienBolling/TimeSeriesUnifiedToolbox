@@ -45,6 +45,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
+"tests/**/*.py" = ["S101", "ANN201", "NPY002", "PLR2004", "RUF043"]  # Allow asserts, no return type annotations, allow legacy numpy random, magic values, regex patterns
 
 [tool.basedpyright]
 reportAnyType = false
