@@ -19,9 +19,9 @@ type ConfigData = (
     dict[str, Any] | BaseModel | NamedTuple
 )  # Abstract type to alias all types used to pass configuraiton data. (Such as hyperparameters, etc.)
 
-# Constants for data shape validation
-TIMESERIES_NDIM = 4  # (batch, dimension, timestep, value)
-TABULAR_NDIM = 2  # (batch, feature)
+# Constants for internal data shape validation
+_TIMESERIES_NDIM = 4  # (batch, dimension, timestep, value)
+_TABULAR_NDIM = 2  # (batch, feature)
 
 
 class Data:
@@ -63,8 +63,8 @@ class TimeSeries(Data):
             ValueError: If values is not a 4D array
 
         """
-        if values.ndim != TIMESERIES_NDIM:
-            msg = f"Values must be a {TIMESERIES_NDIM}D array (batch, dimension, timestep, value), got {values.ndim}D array"
+        if values.ndim != _TIMESERIES_NDIM:
+            msg = f"Values must be a {_TIMESERIES_NDIM}D array (batch, dimension, timestep, value), got {values.ndim}D array"
             raise ValueError(msg)
 
         if len(times) != values.shape[2]:
@@ -136,10 +136,11 @@ class TimeSeries(Data):
 
     def __repr__(self) -> str:
         """Return a string representation of the TimeSeries."""
+        time_range = f"times={self._times[0]} to {self._times[-1]}" if len(self._times) > 0 else "times=empty"
         return (
             f"TimeSeries(shape={self.shape}, "
             f"{'univariate' if self.is_univariate else 'multivariate'}, "
-            f"times={self._times[0]} to {self._times[-1]})"
+            f"{time_range})"
         )
 
 
@@ -172,8 +173,8 @@ class TabularData(Data):
             ValueError: If feature_names length doesn't match feature dimension
 
         """
-        if values.ndim != TABULAR_NDIM:
-            msg = f"Values must be a {TABULAR_NDIM}D array (batch, feature), got {values.ndim}D array"
+        if values.ndim != _TABULAR_NDIM:
+            msg = f"Values must be a {_TABULAR_NDIM}D array (batch, feature), got {values.ndim}D array"
             raise ValueError(msg)
 
         if feature_names is not None and len(feature_names) != values.shape[1]:
