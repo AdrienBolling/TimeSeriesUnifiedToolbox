@@ -13,6 +13,7 @@ dependencies = [
   "pydantic-settings>=2.12.0",
   "ray[all]>=2.50.0",
   "torch>=2.9.0",
+  "frozendict>=2.4.7",
 ]
 
 [dependency-groups]
@@ -44,3 +45,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
+
+[tool.basedpyright]
+reportAnyType = false

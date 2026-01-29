@@ -31,6 +31,7 @@ class Port(BaseModel):
 
     type: type
     desc: str
+    mode: list[str]
 
 
 class NodeConfig(BaseModel):

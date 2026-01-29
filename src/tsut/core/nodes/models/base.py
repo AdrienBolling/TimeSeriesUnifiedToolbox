@@ -1,9 +1,9 @@
 """Define the base Model class for the TSUT Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import TypeVar, override
 
-from tsut.core.common.data.types import ConfigData, Data
+from tsut.core.common.data.types import ConfigData, ContextData, Data
 from tsut.core.nodes.base import Node, NodeConfig, NodeType
 
 D_I = TypeVar("D_I", bound=Data)
@@ -26,13 +26,17 @@ class Model[D_I, D_O, C](
         """Minimal constructor for Model class."""
         super().__init__(config=config)
 
+    # --- Abstract Methods to reimplement ---
+
     @abstractmethod
-    def fit(self, data: D_I) -> None:
+    def fit(self, data: dict[str, D_I | ContextData]) -> None:
         """Fit the model with the given data."""
         ...
 
     @abstractmethod
-    def predict(self, data: D_I) -> D_O:
+    def predict(
+        self, data: dict[str, D_I | ContextData]
+    ) -> dict[str, D_O | ContextData]:
         """Predict using the model with the given data."""
         ...
 
@@ -45,3 +49,15 @@ class Model[D_I, D_O, C](
     def restore_params(self, params: C) -> None:
         """Restore the model parameters."""
         ...
+
+    # --- Overrides for Node interface ---
+
+    @override
+    def node_fit(self, data: dict[str, D_I | ContextData]) -> None:
+        return self.fit(data=data)
+
+    @override
+    def node_transform(
+        self, data: dict[str, D_I | ContextData]
+    ) -> dict[str, D_O | ContextData]:
+        return self.predict(data=data)
