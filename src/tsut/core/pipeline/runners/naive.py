@@ -66,11 +66,12 @@ class NaivePipelineRunner:
         """Ensure the pipeline is compiled before execution.
 
         This validates the DAG structure and prepares the pipeline for execution.
-        
+
         Note:
             Directly accesses Pipeline's private attributes since no public compile()
             method is available. This is consistent with the runner's responsibility
             to manage pipeline execution state.
+
         """
         if not self.pipeline.compiled():
             # Validate the pipeline structure
@@ -206,21 +207,18 @@ class NaivePipelineRunner:
 
         Returns:
             Dictionary mapping sink/leaf node names to their output data.
+
         """
         sink_outputs = {}
-        
+
         for node_name in self.pipeline.node_objects:
             node = self.pipeline.node_objects[node_name]
-            
+
             # Check if it's a sink node by type
-            if hasattr(node, 'node_type') and node.node_type.value == "sink":
+            if (hasattr(node, "node_type") and node.node_type.value == "sink") or not list(self.pipeline._graph.successors(node_name)):
                 if node_name in self._node_outputs:
                     sink_outputs[node_name] = self._node_outputs[node_name]
-            # Or if it's a leaf node (no successors)
-            elif not list(self.pipeline._graph.successors(node_name)):
-                if node_name in self._node_outputs:
-                    sink_outputs[node_name] = self._node_outputs[node_name]
-        
+
         return sink_outputs
 
     def train(self) -> dict[str, dict[str, Data | ContextData]]:
@@ -231,6 +229,7 @@ class NaivePipelineRunner:
 
         Returns:
             Dictionary mapping node names to their output data.
+
         """
         return self.run(mode=ExecutionMode.TRAIN)
 
@@ -241,6 +240,7 @@ class NaivePipelineRunner:
 
         Returns:
             Dictionary mapping node names to their output data.
+
         """
         return self.run(mode=ExecutionMode.PREDICT)
 
@@ -252,5 +252,6 @@ class NaivePipelineRunner:
 
         Returns:
             Dictionary mapping node names to their output data.
+
         """
         return self.run(mode=ExecutionMode.EVALUATE)

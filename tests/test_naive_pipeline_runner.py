@@ -41,7 +41,7 @@ class MockNode(Node[MockData, MockData]):
             else:
                 output[key] = value
         return output
-    
+
     def node_fit_transform(
         self, data: dict[str, MockData | ContextData]
     ) -> dict[str, MockData | ContextData]:
@@ -59,7 +59,7 @@ class MockSourceNode(MockNode):
         """Generate mock data."""
         self.transform_called = True
         return {"output": MockData(value=1)}
-    
+
     def node_fit_transform(
         self, data: dict[str, MockData | ContextData]
     ) -> dict[str, MockData | ContextData]:
@@ -384,7 +384,7 @@ class TestNaivePipelineRunner:
             in_ports={"input": Port(type=MockData, desc="Input", mode=["train"])},
             out_ports={"output": Port(type=MockData, desc="Output", mode=["train"])},
         )
-        
+
         node_b_config = NodeConfig(
             node_type=NodeType.TRANSFORM,
             in_ports={"input": Port(type=MockData, desc="Input", mode=["train"])},

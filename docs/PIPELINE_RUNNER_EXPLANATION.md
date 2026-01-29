@@ -20,14 +20,23 @@ The PipelineRunner must determine a valid execution order using **topological so
 - The execution respects the data flow direction
 - Multiple valid orderings may exist, any one is acceptable
 
-### 3. Node Execution Phases
+### 3. Node Execution Modes
 
-Each node supports two primary operations:
-- **`node_fit()`**: Fits/trains the node with input data (used during training)
-- **`node_transform()`**: Transforms data through the node (used during inference)
-- **`node_fit_transform()`**: Combines both operations
+The runner supports three execution modes:
+- **`TRAIN`**: Fits/trains nodes and produces outputs for downstream nodes
+- **`PREDICT`**: Only transforms data through nodes (no fitting)
+- **`EVALUATE`**: Evaluates performance (placeholder for future implementation)
 
-### 4. Data Flow
+### 4. Critical Design Principle: Always Produce Outputs
+
+**Key Insight**: In all execution modes, nodes must produce outputs because downstream nodes need these outputs as inputs, even during training.
+
+This means:
+- **TRAIN mode**: Calls `node_fit_transform()` - fits the node AND produces outputs
+- **PREDICT mode**: Calls `node_transform()` - only transforms to produce outputs
+- **EVALUATE mode**: Calls `node_transform()` - same as predict for now
+
+### 5. Data Flow
 
 Data flows through the pipeline via ports:
 - **Input ports**: Where a node receives data from upstream nodes
@@ -45,21 +54,29 @@ Before execution, the runner must compile the pipeline:
 
 ### 2. Execution Orchestration
 
-During execution (e.g., training), the runner:
+During execution, the runner:
 1. Retrieves the topologically sorted node order
 2. Iterates through nodes in this order
 3. For each node:
    - Collects input data from upstream nodes' outputs
    - Maps data according to edge port mappings
-   - Executes the node's operation (fit, transform, or fit_transform)
+   - Executes the node's operation based on mode:
+     - **TRAIN**: `node_fit_transform()` - fits and produces outputs
+     - **PREDICT**: `node_transform()` - only produces outputs
+     - **EVALUATE**: `node_transform()` - same as predict (placeholder)
    - Stores output data for downstream nodes
 
 ### 3. Data Management
 
 The runner maintains:
-- **Input data cache**: Stores initial data sources
 - **Intermediate results**: Stores outputs from each node for downstream consumption
 - **Context data**: Additional metadata that flows through the pipeline
+
+### 4. Sink Nodes and Final Outputs
+
+The runner provides a method to retrieve outputs from:
+- **Sink nodes**: Nodes explicitly marked with `node_type = SINK`
+- **Leaf nodes**: Nodes with no successors (end of the pipeline)
 
 ## Naive Implementation Strategy
 
@@ -73,7 +90,7 @@ A naive implementation focuses on correctness over optimization:
 ### Algorithm Pseudocode
 
 ```
-function run_pipeline(pipeline, mode='fit_transform'):
+function run_pipeline(pipeline, mode='train'):
     # Compile if not already compiled
     if not pipeline.compiled():
         compile(pipeline)
@@ -95,19 +112,29 @@ function run_pipeline(pipeline, mode='fit_transform'):
             for source_port, target_port in edge_data.ports_map:
                 inputs[target_port] = node_outputs[predecessor][source_port]
         
-        # Execute node
-        if mode == 'fit':
-            node.node_fit(inputs)
-        elif mode == 'transform':
-            outputs = node.node_transform(inputs)
-        else:  # fit_transform
+        # Execute node based on mode - ALWAYS produces outputs
+        if mode == 'train':
+            # Fit and transform to produce outputs for downstream nodes
             outputs = node.node_fit_transform(inputs)
+        elif mode == 'predict':
+            # Only transform to produce outputs
+            outputs = node.node_transform(inputs)
+        else:  # evaluate
+            # Same as predict for now (placeholder)
+            outputs = node.node_transform(inputs)
         
-        # Store outputs
-        if mode != 'fit':
-            node_outputs[node_name] = outputs
+        # Store outputs for downstream nodes
+        node_outputs[node_name] = outputs
     
     return node_outputs
+
+function get_sink_outputs(node_outputs):
+    # Return outputs from sink or leaf nodes only
+    sink_outputs = {}
+    for node_name, node in pipeline.nodes:
+        if node.type == 'sink' or has_no_successors(node_name):
+            sink_outputs[node_name] = node_outputs[node_name]
+    return sink_outputs
 ```
 
 ## Future Enhancements
