@@ -41,10 +41,12 @@ ignore = [
   "D203",   # Blank line before class docstring
   "D213",   # Multi-line docstring summary should start at the first line
   "ANN401", # Missing type annotation for self in method
+  "F722",   # Syntax error in forward annotation (jaxtyping syntax)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
+"tests/**/*.py" = ["S101", "ANN201", "NPY002", "PLR2004", "RUF043"]  # Allow asserts, no return type annotations, allow legacy numpy random, magic values, regex patterns
 
 [tool.basedpyright]
 reportAnyType = false
