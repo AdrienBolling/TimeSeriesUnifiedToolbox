@@ -1,7 +1,7 @@
 """JSON Data Fetcher Node for the TSUT Framework."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -25,11 +25,11 @@ class JSONDataFetcherConfig(DataSourceConfig):
         None, description="Columns to use as values/features"
     )
     batch_size: int = Field(1, description="Batch size for TimeSeries data")
-    orient: str = Field(
-        "columns", description="JSON orientation for pandas (columns, records, index, etc.)"
+    orient: Literal["split", "records", "index", "columns", "values", "table"] = Field(
+        "columns", description="JSON orientation for pandas"
     )
 
-    def __init__(self, **data: str | int | list[str] | None) -> None:
+    def __init__(self, **data: Any) -> None:
         """Initialize the JSONDataFetcherConfig."""
         super().__init__(**data)
         # Set output port based on data_type

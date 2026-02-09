@@ -1,7 +1,7 @@
 """CSV Data Fetcher Node for the TSUT Framework."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -26,7 +26,7 @@ class CSVDataFetcherConfig(DataSourceConfig):
     )
     batch_size: int = Field(1, description="Batch size for TimeSeries data")
 
-    def __init__(self, **data: str | int | list[str] | None) -> None:
+    def __init__(self, **data: Any) -> None:
         """Initialize the CSVDataFetcherConfig."""
         super().__init__(**data)
         # Set output port based on data_type
