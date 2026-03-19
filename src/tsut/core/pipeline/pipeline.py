@@ -181,6 +181,14 @@ class Pipeline:
         self._config.edges.remove(edge_to_remove)
         self._remove_edge_from_repr(source, target)
 
+    def get_edge(self, source: str, target: str) -> Edge:
+        """Get an edge from the pipeline."""
+        for edge in self._config.edges:
+            if edge.source == source and edge.target == target:
+                return edge
+        message = f"Edge from '{source}' to '{target}' does not exist in the pipeline."
+        raise ValueError(message)
+
     def update_node_config(self, node_name: str, new_config: NodeConfig) -> None:
         """Update the configuration of a node in the pipeline."""
         if node_name not in self._config.nodes:

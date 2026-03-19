@@ -5,7 +5,6 @@ from typing import Any, override
 import networkx as nx
 
 from tsut.core.common.enums import NodeExecutionMode as Mode
-from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 from tsut.core.pipeline.pipeline import Edge, Pipeline
 from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner, RunnerConfig
 
@@ -89,7 +88,7 @@ class NumpyPipelineRunner(PipelineRunner[Any, Any]):
                 # Recursively execute the predecessor node if its output is not already computed
                 self._node_outputs[pred] = self._call_node(pred)
             # Get the edge data to translate the output keys to the expected input keys
-            edge = self.pipeline.graph.get_edge(pred, node_name)
+            edge = self.pipeline.get_edge(pred, node_name)
             inputs = {**inputs, **self._filter_and_translate_inputs(node_name, edge, self._node_outputs[pred])}
 
         # Execute the node with the gathered inputs
