@@ -7,11 +7,10 @@ from typing import Any, ParamSpec, TypeVar, override
 
 from pydantic import BaseModel, PrivateAttr
 
-from tsut.core.common.data.types import ContextData, Data
 from tsut.core.common.mixins.base import MixinSettings
 
-D_I = TypeVar("D_I", bound=Data)
-D_O = TypeVar("D_O", bound=Data)
+D_I = TypeVar("D_I")
+D_O = TypeVar("D_O")
 
 P = ParamSpec("P")
 
@@ -112,13 +111,14 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
         if "config" not in kwargs:
             message = "Node must be initialized with a 'config' keyword argument, subtype of 'NodeConfig'."
             raise ValueError(message)
-        self._config: NodeConfig = kwargs["config"]
+        if not self._config:
+            self._config: NodeConfig = kwargs["config"]
         super().__init__(*args, **kwargs)
         # If super has a post_init, call it
         if getattr(
             super(), "__post_init__", None
         ):  # INFO: Ignore the error here if pyright raises one, it's being dumb
-            super().__post_init__(*args, **kwargs)
+            super().__post_init__(*args, **kwargs) # type: ignore
             # INFO: Although it may seem useless, it's used in case of multiple inheritance with Mixins and such
 
     @property
@@ -127,20 +127,20 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
         return self._config.id
 
     @abstractmethod
-    def node_fit(self, data: dict[str, D_I | ContextData]) -> None:
+    def node_fit(self, data: D_I) -> None:
         """Define the base logic for fitting a Node with the given data. Can also be called with  no data to implement setup logic."""
         raise NotImplementedError
 
     @abstractmethod
     def node_transform(
-        self, data: dict[str, D_I | ContextData]
-    ) -> dict[str, D_O | ContextData]:
+        self, data: D_I
+    ) -> D_O:
         """Define the base logic for transforming data through the Node."""
         raise NotImplementedError
 
     def node_fit_transform(
-        self, data: dict[str, D_I | ContextData]
-    ) -> dict[str, D_O | ContextData]:
+        self, data: D_I
+    ) -> D_O:
         """Define the base logic for fitting and transforming data through the Node."""
         self.node_fit(data)
         return self.node_transform(data)

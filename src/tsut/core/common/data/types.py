@@ -505,3 +505,21 @@ class TabularData(Data):
         """Return a string representation of the TabularData."""
         feature_info = f", features={self._feature_names}" if self._feature_names else ""
         return f"TabularData(shape={self.shape}{feature_info})"
+
+    def __help__(self) -> None:
+        """Provide detailed help information for TabularData."""
+        help_text = (
+            "TabularData represents tabular/non-temporal data structured as (batch, feature).\n"
+            "Attributes:\n"
+            "  values: 2D numpy array with shape (batch, feature)\n"
+            "  feature_names: Optional list of feature names\n"
+            "  metadata: Optional dictionary for additional information\n"
+            "Methods:\n"
+            "  from_dataframe(df): Create TabularData from a pandas DataFrame\n"
+            "  from_numpy(values, feature_names=None): Create TabularData from a numpy array\n"
+            "  from_dict(data): Create TabularData from a dictionary\n"
+            "  to_dataframe(): Convert TabularData to a pandas DataFrame\n"
+            "  to_numpy(): Extract the values as a numpy array\n"
+            "  to_dict(): Convert TabularData to a dictionary format\n"
+        )
+        print(help_text)

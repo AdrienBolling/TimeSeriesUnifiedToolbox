@@ -14,6 +14,8 @@ dependencies = [
   "ray[all]>=2.50.0",
   "torch>=2.9.0",
   "frozendict>=2.4.7",
+  "iplotx>=1.7.1",
+  "igraph>=1.0.0",
 ]
 
 [dependency-groups]

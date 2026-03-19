@@ -28,6 +28,7 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
         
         Returns:
             Fetched data
+
         """
         ...
 
@@ -36,9 +37,9 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
         
         Args:
             data: Dictionary (unused for data sources)
+
         """
         # Default implementation does nothing (data sources don't need fitting)
-        pass
 
     def node_transform(self, data: dict) -> dict[str, D_O]:
         """Transform data through the Node by fetching data.
@@ -48,5 +49,6 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
             
         Returns:
             Dictionary with fetched data under "output" key
+
         """
         return {"output": self.fetch_data()}

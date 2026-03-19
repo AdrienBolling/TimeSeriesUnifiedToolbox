@@ -7,7 +7,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
-from tsut.core.pipeline.base import Pipeline
+from tsut.core.pipeline.pipeline import Pipeline
 
 
 class RunnerConfig(BaseModel):
@@ -32,4 +32,12 @@ class PipelineRunner(Protocol):
 
     def train(self) -> None:
         """Train the pipeline."""
+        ...
+
+    def evaluate(self) -> None:
+        """Evaluate the pipeline."""
+        ...
+
+    def infer(self) -> None:
+        """Run inference with the pipeline."""
         ...
