@@ -1,6 +1,6 @@
 # TimeSeriesUnifiedToolbox
 
-A unified framework for Time Series manipulation, forecasting, classification, and deployement, relying heavily on Ray capabilities and pipeline
+A unified framework for Time Series manipulation, forecasting, classification, and deployment, relying heavily on Ray capabilities and pipeline
 
 ## Error standardization suggestions
 
