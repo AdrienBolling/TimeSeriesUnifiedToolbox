@@ -1,19 +1,20 @@
 """Define the base Model class for the TSUT Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, override
-import typing
+from typing import TypeVar
 
 from pydantic.main import BaseModel
 
-from tsut.core.nodes.node import Node, NodeConfig, NodeType
+from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
 
 D_I = TypeVar("D_I")
 D_O = TypeVar("D_O")
-C = TypeVar("C")
+P = TypeVar("P")  # To be used for the model's parameters's type.
 
-Hyperparameter_range =
+class ModelMetadata(NodeMetadata):
+    """Metadata for a Model in a TSUT Pipeline."""
 
+    _node_type: NodeType = NodeType.MODEL
 class ModelRunningConfig(BaseModel):
     """Running configuration for a Model in the TSUT Framework.
 
@@ -29,7 +30,7 @@ class ModelHyperParameters(BaseModel):
     """
 
 class ModelConfig(NodeConfig):
-    """Base metadata configuration for all Models in the TSUT Framework."""
+    """Base configuration for all Models in the TSUT Framework."""
 
     node_type: NodeType = NodeType.MODEL
     running_config: ModelRunningConfig = ModelRunningConfig()
@@ -37,14 +38,15 @@ class ModelConfig(NodeConfig):
 
 
 
-class Model[D_I, D_O, C](
+class Model[D_I, D_O, P](
     Node[D_I, D_O], ABC
 ):  # Model is already implicitely an ABC via Node but explicit is better.
     """Base class for all models in the TSUT Framework."""
 
+    metadata = ModelMetadata()
+
     def __init__(self, *, config: ModelConfig) -> None:
         """Minimal constructor for Model class."""
-        super().__init__(config=config)
         self._config = config
 
     # --- Abstract Methods to reimplement ---
@@ -62,13 +64,13 @@ class Model[D_I, D_O, C](
         ...
 
     @abstractmethod
-    def get_params(self) -> C:
+    def get_params(self) -> P:
         """Get the model parameters."""
         ...
 
     @abstractmethod
-    def restore_params(self, params: C) -> None:
-        """Restore the model parameters."""
+    def set_params(self, params: P) -> None:
+        """Set the model parameters."""
         ...
 
     # --- API convenience ---
@@ -84,18 +86,23 @@ class Model[D_I, D_O, C](
         return self._config.hyperparameters
 
     @property
-    def parameters(self) -> C:
+    def parameters(self) -> P:
         """Property to get the model parameters."""
         return self.get_params()
 
-    # --- Overrides for Node interface, don't touch without a very good reason ---
+    @property
+    def config(self) -> ModelConfig:
+        """Property to get the full model configuration."""
+        return self._config
 
-    @override
+    # --- Implementations for Node interface, don't touch without a very good reason ---
+
     def node_fit(self, data: D_I) -> None:
+        """Override of the Node's fit method to call the Model's fit method."""
         return self.fit(data=data)
 
-    @override
     def node_transform(
         self, data: D_I
     ) -> D_O:
+        """Override of the Node's transform method to call the Model's predict method."""
         return self.predict(data=data)

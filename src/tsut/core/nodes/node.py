@@ -14,6 +14,8 @@ D_O = TypeVar("D_O")
 
 P = ParamSpec("P")
 
+class NodeMetadata(BaseModel):
+    """Metadata for a Node in a TSUT Pipeline."""
 
 class NodeType(StrEnum):
     """Define the types of Nodes available in a TSUT Pipeline."""
@@ -71,6 +73,7 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
     """Base class for a Node in a TSUT Pipeline."""
 
     _is_node: bool = True
+    metadata = NodeMetadata()
 
     def __init__(self, *, config: NodeConfig) -> None:
         """Initialize the Node with the given configuration.
@@ -80,6 +83,9 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
         self.node_type: NodeType = config.node_type
         self.in_ports: dict[str, Port] = config.in_ports
         self.out_ports: dict[str, Port] = config.out_ports
+
+        if not self._config:
+            self._config = config
 
     def __init_subclass__(cls, *args: ParamSpec, **kwargs: ParamSpec) -> None:
         """Ensure several things.
@@ -108,11 +114,6 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
         If 'config' is passed as kwarg, set it as the Node's '_config' attribute.
         Ensure a call to super().init() with the proper args.
         """
-        if "config" not in kwargs:
-            message = "Node must be initialized with a 'config' keyword argument, subtype of 'NodeConfig'."
-            raise ValueError(message)
-        if not self._config:
-            self._config: NodeConfig = kwargs["config"]
         super().__init__(*args, **kwargs)
         # If super has a post_init, call it
         if getattr(
