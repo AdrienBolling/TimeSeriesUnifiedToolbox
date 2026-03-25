@@ -31,13 +31,15 @@ class TransformHyperParameters(BaseModel):
     For example, in some transforms, this could be the window size for a rolling window transform, etc.
     """
 
+R = TypeVar("R", bound=TransformRunningConfig)
+H = TypeVar("H", bound=TransformHyperParameters)
 
-class TransformConfig(NodeConfig):
+class TransformConfig[R, H](NodeConfig):
     """Base metadata configuration for all Transform nodes in the TSUT Framework."""
 
     node_type: NodeType = NodeType.TRANSFORM
-    running_config: TransformRunningConfig = TransformRunningConfig()
-    hyperparameters: TransformHyperParameters = TransformHyperParameters()
+    running_config: R
+    hyperparameters: H
 
 
 class TransformNode[D_I, D_O, T](Node[D_I, D_O], ABC):
