@@ -4,9 +4,10 @@ TSUT Pipelines are akin to graphs. The nodes are the components of the pipeline 
 """
 
 from collections.abc import Callable
-from functools import _Wrapped, wraps
+from functools import wraps
 from typing import Any
 
+import matplotlib.pyplot as plt
 import networkx as nx
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -14,11 +15,12 @@ from pydantic_settings import BaseSettings
 from tsut.core.common.data.types import Data
 from tsut.core.nodes.node import Node, NodeConfig
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
+from tsut.core.pipeline.render import plot_graph_with_metadata
 
 _ = Data  # For type checking purposes
 
 
-def decompile(method: Callable[..., Any]) -> _Wrapped[..., Any, ..., Any]:
+def decompile(method: Callable[..., Any]):
     """Return a decorator that marks a method to decompile the pipeline on modification."""
 
     @wraps(method)
@@ -125,7 +127,7 @@ class Pipeline:
         return self._config.edges
 
     @property
-    def graph(self) -> nx.DiGraph[str]:
+    def graph(self) -> nx.DiGraph:
         """Get the internal graph representation of the pipeline."""
         return self._graph
 
@@ -198,6 +200,25 @@ class Pipeline:
         self._config.nodes[node_name] = (node_class_name, new_config)
         # Update the node attributes in the graph representation
         self._graph.nodes[node_name].update(new_config.model_dump())
+
+    def render(self, title: str = "Pipeline Graph", layout: str = "spring") -> Any:
+        """Render the pipeline graph using iplotx.
+
+        Args:
+            title (str): The title of the graph.
+            layout (str): The layout algorithm to use for positioning the nodes. Options include "spring", "kamada_kawai", etc.
+
+        Returns:
+            The rendered graph object from iplotx.
+
+        """
+        fig, ax, artist = plot_graph_with_metadata(
+            G=self._graph,
+            node_objects=self.node_objects,
+            title=title,
+            layout=layout,
+        )
+        plt.plot
 
     # --- Internal methods for node instantiation and management
 
