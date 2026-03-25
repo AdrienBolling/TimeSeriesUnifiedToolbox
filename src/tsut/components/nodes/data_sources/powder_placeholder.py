@@ -8,7 +8,10 @@ import pandas as pd
 
 class PowderDataSourceMetadata(DataSourceMetadata):
     """Metadata for the RTP powder project data source node."""
+    
     node_name: str = "RTP Powder Data Source"
+    input_type: str = "None"  # Data sources have no input
+    output_type: str = "pd.DataFrame" # Output is a dictionary
     node_description: str = "Data source node for the RTP powder project, responsible for fetching and preparing the data for the project."
 
 
