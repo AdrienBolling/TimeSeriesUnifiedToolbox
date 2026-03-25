@@ -6,4 +6,5 @@ class NodeExecutionMode(StrEnum):
     TRAINING = "training"
     INFERENCE = "inference"
     EVALUATION = "evaluation"
+    ALL = "all"
     DEFAULT = "default" # Placeholder for unset mode to raise errors if used without being set
