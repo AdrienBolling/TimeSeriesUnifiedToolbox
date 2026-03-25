@@ -15,6 +15,7 @@ class ModelMetadata(NodeMetadata):
     """Metadata for a Model in a TSUT Pipeline."""
 
     _node_type: NodeType = NodeType.MODEL
+    trainable: bool = True  # Models are trainable by default, but this can be overridden for specific models that are not trainable (e.g., a model that is just a wrapper around a pre-trained model that cannot be further trained).
 class ModelRunningConfig(BaseModel):
     """Running configuration for a Model in the TSUT Framework.
 

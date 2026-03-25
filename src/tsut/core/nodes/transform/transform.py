@@ -15,6 +15,7 @@ class TransformMetadata(NodeMetadata):
     """Metadata for a TransformNode in a TSUT Pipeline."""
 
     _node_type: NodeType = NodeType.TRANSFORM
+    trainable: bool = True  # Transforms are trainable by default, but this can be overridden for specific transforms that are not trainable (e.g., a transform that is just a wrapper around a pre-trained model that cannot be further trained).
 
 class TransformRunningConfig(BaseModel):
     """Running configuration for a TransformNode in the TSUT Framework.
