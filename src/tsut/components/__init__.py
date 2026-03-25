@@ -1,0 +1,1 @@
+# pyright: reportIncompatibleVariableOverride=false
