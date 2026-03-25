@@ -32,7 +32,7 @@ class Port(BaseModel):
 
     type: type
     desc: str
-    mode: list[str]
+    mode: list[str] = ["all"]
 
 
 class NodeConfig(BaseModel):
@@ -108,18 +108,21 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
                 message += f"Use 'class {cls.__name__}({bases[base_idx].__name__}, {base.__name__}):' instead of 'class {cls.__name__}({base.__name__}, {bases[base_idx].__name__}):'."
                 raise TypeError(message)
 
-    def __post_init__(self, *args: Any, **kwargs: Any) -> None:
+    def __post_init__(self, *, config=None) -> None:
         """Define common post-initialization hook for all Nodes.
 
         If 'config' is passed as kwarg, set it as the Node's '_config' attribute.
         Ensure a call to super().init() with the proper args.
         """
-        super().__init__(*args, **kwargs)
+        try:
+            super().__init__(config=config)  # type: ignore
+        except TypeError: # In case we go back to object, object.__init__ doesn't take any argument, so we need to catch the TypeError and call it without arguments
+            super().__init__()  # type: ignore
         # If super has a post_init, call it
         if getattr(
             super(), "__post_init__", None
         ):  # INFO: Ignore the error here if pyright raises one, it's being dumb
-            super().__post_init__(*args, **kwargs) # type: ignore
+            super().__post_init__(config=config) # type: ignore
             # INFO: Although it may seem useless, it's used in case of multiple inheritance with Mixins and such
 
     @property
