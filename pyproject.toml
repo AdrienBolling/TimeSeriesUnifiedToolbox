@@ -16,6 +16,9 @@ dependencies = [
   "frozendict>=2.4.7",
   "iplotx>=1.7.1",
   "igraph>=1.0.0",
+  "torchmetrics>=1.9.0",
+  "mplcursors>=0.7.1",
+  "ipympl>=0.10.0",
 ]
 
 [dependency-groups]
