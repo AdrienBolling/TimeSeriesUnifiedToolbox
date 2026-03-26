@@ -6,10 +6,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
-
-D_I = TypeVar("D_I")  # Input data type for the TransformNode
-D_O = TypeVar("D_O") # Output data type for the TransformNode
-T = TypeVar("T")  # Configuration type for the TransformNode, if needed. This is optional and can be set to None if not used.
+from tsut.core.common.data.data import Data, DataContext, D_I, D_O, D_C_I, D_C_O, P
 
 class TransformMetadata(NodeMetadata):
     """Metadata for a TransformNode in a TSUT Pipeline."""
@@ -43,7 +40,7 @@ class TransformConfig[R, H](NodeConfig):
     hyperparameters: H
 
 
-class TransformNode[D_I, D_O, T](Node[D_I, D_O], ABC):
+class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC):
     """Base class for all transform nodes in the TSUT Framework."""
 
     metadata = TransformMetadata()
@@ -51,26 +48,27 @@ class TransformNode[D_I, D_O, T](Node[D_I, D_O], ABC):
     def __init__(self, *, config: TransformConfig) -> None:
         """Initialize the TransformNode with the given configuration."""
         self._config = config
+        self._fitted = False  # To keep track of whether the transform has been fitted or not. This can be useful for transforms that require fitting before transforming.
 
     # --- Abstract Methods to reimplement ---
 
     @abstractmethod
-    def fit(self, data: D_I) -> None:
+    def fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Fit the transform with the given data."""
         ...
 
     @abstractmethod
-    def transform(self, data: D_I) -> D_O:
+    def transform(self, data: dict[str, tuple[D_I, D_C_I]]) -> dict[str, tuple[D_O, D_C_O]]:
         """Apply the transform to the given data."""
         ...
 
     @abstractmethod
-    def get_params(self) -> T:
+    def get_params(self) -> P:
         """Get the current parameters of the transform."""
         ...
 
     @abstractmethod
-    def set_params(self, params: T) -> None:
+    def set_params(self, params: P) -> None:
         """Set the parameters of the transform."""
         ...
 
@@ -92,16 +90,19 @@ class TransformNode[D_I, D_O, T](Node[D_I, D_O], ABC):
         return self._config
 
     @property
-    def params(self) -> T:
+    def params(self) -> P:
         """Convenience property to access the current parameters of the transform."""
         return self.get_params()
 
     # --- Implementations for Node interface, don't touch without a very good reason ---
 
-    def node_fit(self, data: D_I) -> None:
+    def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Override of the Node's fit method to call the TransformNode's fit method."""
-        return self.fit(data=data)
+        self.fit(data=data)
+        self._fitted = True
 
-    def node_transform(self, data: D_I) -> D_O:
+    def node_transform(self, data: dict[str, tuple[D_I, D_C_I]]) -> dict[str, tuple[D_O, D_C_O]]:
         """Override of the Node's transform method to call the TransformNode's transform method."""
+        if not self._fitted:
+            raise ValueError("TransformNode must be fitted before calling transform.")
         return self.transform(data=data)

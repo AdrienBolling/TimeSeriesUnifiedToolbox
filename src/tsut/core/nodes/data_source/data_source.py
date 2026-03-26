@@ -5,10 +5,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from tsut.core.common.data.types import Data
 from tsut.core.nodes.node import Node, NodeConfig, NodeType
 
-D_O = TypeVar("D_O", bound=Data)
 
 class DataSourceMetadata(BaseModel):
     """Metadata for a DataSource node."""
@@ -28,7 +26,7 @@ class DataSourceConfig[R](NodeConfig):
     running_config: R
 
 
-class DataSourceNode[D_O](Node[None, D_O], ABC):
+class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
     """Base class for all data source nodes in the TSUT Framework."""
 
     metadata = DataSourceMetadata()
@@ -43,7 +41,7 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
         ...
 
     @abstractmethod
-    def fetch_data(self) -> D_O:
+    def fetch_data(self) -> dict[str, tuple[D_O, D_C_O]]:
         """Fetch data from the source.
 
         Returns:
@@ -54,7 +52,7 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
 
     # --- Node API implementation --- Don't touch these unless you know what you're doing ---
 
-    def node_fit(self, data: None = None) -> None:
+    def node_fit(self, data: dict[str, tuple[None, None]]) -> None:
         """Fit the data source node with the given data.
 
         Args:
@@ -64,7 +62,7 @@ class DataSourceNode[D_O](Node[None, D_O], ABC):
         _ = data  # Unused for data sources
         self.setup_source()
 
-    def node_transform(self, data: None) -> D_O:
+    def node_transform(self, data: dict[str, tuple[None, None]]) -> dict[str, tuple[D_O, D_C_O]]:
         """Transform data through the Node by fetching data.
 
         Args:

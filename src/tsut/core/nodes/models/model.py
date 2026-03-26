@@ -1,15 +1,16 @@
 """Define the base Model class for the TSUT Framework."""
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 from pydantic.main import BaseModel
 
-from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
+from tsut.core.nodes.node import (
+    Node,
+    NodeConfig,
+    NodeMetadata,
+    NodeType,
+)
 
-D_I = TypeVar("D_I")
-D_O = TypeVar("D_O")
-P = TypeVar("P")  # To be used for the model's parameters's type.
 
 class ModelMetadata(NodeMetadata):
     """Metadata for a Model in a TSUT Pipeline."""
@@ -39,8 +40,8 @@ class ModelConfig(NodeConfig):
 
 
 
-class Model[D_I, D_O, P](
-    Node[D_I, D_O], ABC
+class Model[D_I, D_C_I, D_O, D_C_O, P](
+    Node[D_I, D_C_I, D_O, D_C_O], ABC
 ):  # Model is already implicitely an ABC via Node but explicit is better.
     """Base class for all models in the TSUT Framework."""
 
@@ -53,14 +54,14 @@ class Model[D_I, D_O, P](
     # --- Abstract Methods to reimplement ---
 
     @abstractmethod
-    def fit(self, data: D_I) -> None:
+    def fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Fit the model with the given data."""
         ...
 
     @abstractmethod
     def predict(
-        self, data: D_I
-    ) -> D_O:
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Predict using the model with the given data."""
         ...
 
@@ -98,12 +99,12 @@ class Model[D_I, D_O, P](
 
     # --- Implementations for Node interface, don't touch without a very good reason ---
 
-    def node_fit(self, data: D_I) -> None:
+    def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Override of the Node's fit method to call the Model's fit method."""
         return self.fit(data=data)
 
     def node_transform(
-        self, data: D_I
-    ) -> D_O:
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Override of the Node's transform method to call the Model's predict method."""
         return self.predict(data=data)

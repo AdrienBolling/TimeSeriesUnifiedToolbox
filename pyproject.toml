@@ -19,10 +19,18 @@ dependencies = [
   "torchmetrics>=1.9.0",
   "mplcursors>=0.7.1",
   "ipympl>=0.10.0",
+  "typeguard>=4.5.1",
+  "jupyter>=1.1.1",
+  "beartype>=0.22.9",
 ]
 
 [dependency-groups]
-dev = ["pre-commit>=4.3.0", "ruff>=0.14.2", "ty>=0.0.1a24"]
+dev = [
+    "pandas-stubs>=3.0.0.260204",
+    "pre-commit>=4.3.0",
+    "ruff>=0.14.2",
+    "ty>=0.0.1a24",
+]
 
 [tool.ruff.lint]
 select = [
@@ -47,6 +55,7 @@ ignore = [
   "D213",   # Multi-line docstring summary should start at the first line
   "ANN401", # Missing type annotation for self in method
   "F722",   # Syntax error in forward annotation (jaxtyping syntax)
+  "RUF012" # Mutable class attributes should be annotated with `typing.ClassVar`
 ]
 
 [tool.ruff.lint.per-file-ignores]

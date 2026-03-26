@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from tsut.core.common.enums import NodeExecutionMode
 from tsut.core.pipeline.pipeline import Pipeline
+from tsut.core.nodes.node import Node
 
 D_O = TypeVar("D_O")  # Output data type of the pipeline execution
 M = TypeVar("M")  # Metrics output type for evaluation results
@@ -53,6 +54,11 @@ class PipelineRunner[D_O, M](ABC):
         """Get the current execution mode of the runner. The mode is supposed to be set automatically according to the function used."""
         return self._mode
 
+    @property
+    def node_objects(self) -> dict[str, Node]:
+        """Get the mapping of node names to their instantiated objects in the pipeline."""
+        return self._pipeline.node_objects
+
     # --- API to implement for any PipelineRunner implementation ---
     # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself. 
     # We will see where it belongs on the long run.
@@ -63,11 +69,11 @@ class PipelineRunner[D_O, M](ABC):
         ...
 
     @abstractmethod
-    def evaluate(self) -> M:
+    def evaluate(self) -> dict[str, M]:
         """Evaluate the pipeline."""
         ...
 
     @abstractmethod
-    def infer(self) -> D_O:
+    def infer(self) -> dict[str, D_O]:
         """Run inference with the pipeline."""
         ...

@@ -7,10 +7,8 @@ from typing import Any, ParamSpec, TypeVar, override
 
 from pydantic import BaseModel, PrivateAttr
 
-from tsut.core.common.mixins.base import MixinSettings
-
-D_I = TypeVar("D_I")
-D_O = TypeVar("D_O")
+from tsut.core.common.data.data import ArrayLike, ArrayLikeEnum, DataCategoryEnum, DataContext, D_I, D_O, D_C_I, D_C_O
+from tsut.core.common.mixins.mixin import MixinSettings
 
 P = ParamSpec("P")
 
@@ -30,7 +28,9 @@ class NodeType(StrEnum):
 class Port(BaseModel):
     """Model of a port in a TSUT Node."""
 
-    type: type
+    arr_type: ArrayLikeEnum # The type of data array that this port accepts or outputs, e.g. pd.DataFrame, np.ndarray, etc.
+    data_category: DataCategoryEnum # The category of data that this port accepts or outputs, e.g. "numerical", "categorical", "mixed", etc.
+    data_shape: str # the shape of the data that this ports accepts or outputs for jaxtyping checking. Find the convention for the data shape string at https://docs.kidger.site/jaxtyping/api/array/#shape
     desc: str
     mode: list[str] = ["all"]
 
@@ -69,7 +69,7 @@ class MetaPostInitHook(ABCMeta):
         return instance
 
 
-class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
+class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
     """Base class for a Node in a TSUT Pipeline."""
 
     _is_node: bool = True
@@ -131,20 +131,20 @@ class Node[D_I, D_O](ABC, metaclass=MetaPostInitHook):
         return self._config.id
 
     @abstractmethod
-    def node_fit(self, data: D_I) -> None:
+    def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Define the base logic for fitting a Node with the given data. Can also be called with  no data to implement setup logic."""
         raise NotImplementedError
 
     @abstractmethod
     def node_transform(
-        self, data: D_I
-    ) -> D_O:
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Define the base logic for transforming data through the Node."""
         raise NotImplementedError
 
     def node_fit_transform(
-        self, data: D_I
-    ) -> D_O:
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Define the base logic for fitting and transforming data through the Node."""
         self.node_fit(data)
         return self.node_transform(data)

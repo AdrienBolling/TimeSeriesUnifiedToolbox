@@ -73,8 +73,5 @@ class MissingRateFilterNode(TransformNode[dict[str, pd.DataFrame], dict[str, pd.
 
     def transform(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """Apply the missing rate filter to the given data."""
-        if not self._params:
-            message = "The MissingRateFilterNode must be fitted before calling transform."
-            raise ValueError(message)
         columns_to_filter = self._params["columns_to_filter"]
         return {"output": data["input"].drop(columns=columns_to_filter)}
