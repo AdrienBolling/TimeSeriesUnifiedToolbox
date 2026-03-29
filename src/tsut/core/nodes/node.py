@@ -3,11 +3,15 @@
 import uuid
 from abc import ABC, ABCMeta, abstractmethod
 from enum import StrEnum
-from typing import Any, ParamSpec, TypeVar, override
+from functools import wraps
+from typing import Any, ParamSpec, override
 
 from pydantic import BaseModel, PrivateAttr
 
-from tsut.core.common.data.data import ArrayLike, ArrayLikeEnum, DataCategoryEnum, DataContext, D_I, D_O, D_C_I, D_C_O
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+)
 from tsut.core.common.mixins.mixin import MixinSettings
 
 P = ParamSpec("P")
@@ -23,6 +27,7 @@ class NodeType(StrEnum):
     SINK = "sink"
     TRANSFORM = "transform"
     MODEL = "model"
+    METRIC = "metric"
 
 
 class Port(BaseModel):
@@ -87,12 +92,38 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         if not self._config:
             self._config = config
 
+    @property
+    def in_ports(self) -> dict[str, Port]:
+        """Get the input ports of the Node."""
+        return self._config.in_ports
+
+    @property
+    def out_ports(self) -> dict[str, Port]:
+        """Get the output ports of the Node."""
+        return self._config.out_ports
+
+    @property
+    def config(self) -> NodeConfig:
+        """Get the configuration of the Node."""
+        return self._config
+
     def __init_subclass__(cls, *args: ParamSpec, **kwargs: ParamSpec) -> None:
         """Ensure several things.
 
         - That all subclasses of Node are placed before Mixin classes in the inheritance order. (To ensure proper initialization order).
         """
         super().__init_subclass__(**kwargs)
+
+        orig_init = cls.__init__
+
+        @wraps(orig_init)
+        def wrapped_init(self, *args, **kwargs):
+            if "config" not in kwargs:
+                raise TypeError("config must be passed as a keyword argument")
+            self._config = kwargs["config"]
+            orig_init(self, *args, **kwargs)
+
+        cls.__init__ = wrapped_init
 
         bases = cls.__bases__
         base_idx = None

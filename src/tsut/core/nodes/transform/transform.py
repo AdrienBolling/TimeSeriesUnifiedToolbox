@@ -6,7 +6,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType
-from tsut.core.common.data.data import Data, DataContext, D_I, D_O, D_C_I, D_C_O, P
+
 
 class TransformMetadata(NodeMetadata):
     """Metadata for a TransformNode in a TSUT Pipeline."""
@@ -103,6 +103,6 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
 
     def node_transform(self, data: dict[str, tuple[D_I, D_C_I]]) -> dict[str, tuple[D_O, D_C_O]]:
         """Override of the Node's transform method to call the TransformNode's transform method."""
-        if not self._fitted:
+        if hasattr(self, "_fitted") and not self._fitted:
             raise ValueError("TransformNode must be fitted before calling transform.")
         return self.transform(data=data)

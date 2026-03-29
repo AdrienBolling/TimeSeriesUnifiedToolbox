@@ -12,7 +12,7 @@ class DataSourceMetadata(BaseModel):
     """Metadata for a DataSource node."""
 
     _node_type: NodeType = NodeType.SOURCE
-    trainable = False  # Data sources are not trainable by default, but this can be overridden for specific data sources that are trainable (e.g., a data source that is just a wrapper around a pre-trained model that cannot be further trained).
+    trainable: bool = False  # Data sources are not trainable by default, but this can be overridden for specific data sources that are trainable (e.g., a data source that is just a wrapper around a pre-trained model that cannot be further trained).
 
 class DataSourceRunningConfig(BaseModel):
     """Configuration for running a DataSource node."""
@@ -59,7 +59,6 @@ class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
             data: Dictionary (unused for data sources)
 
         """
-        _ = data  # Unused for data sources
         self.setup_source()
 
     def node_transform(self, data: dict[str, tuple[None, None]]) -> dict[str, tuple[D_O, D_C_O]]:
