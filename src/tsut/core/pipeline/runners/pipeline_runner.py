@@ -59,6 +59,14 @@ class PipelineRunner[D_O, M](ABC):
         """Get the mapping of node names to their instantiated objects in the pipeline."""
         return self._pipeline.node_objects
 
+    def get_params(self) -> dict[str, dict[str, any]]:
+        """Get the parameters of all nodes in the pipeline."""
+        return self._pipeline.get_params()
+
+    def set_params(self, params: dict[str, dict[str, any]]) -> None:
+        """Set the parameters of all nodes in the pipeline."""
+        self._pipeline.set_params(params=params)
+
     # --- API to implement for any PipelineRunner implementation ---
     # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself. 
     # We will see where it belongs on the long run.
