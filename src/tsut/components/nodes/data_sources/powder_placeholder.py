@@ -1,14 +1,19 @@
 """Placeholder for RTP powder project data source node."""
 
-from tsut.core.nodes.data_source.data_source import DataSourceConfig, DataSourceMetadata, DataSourceNode, DataSourceRunningConfig
-from tsut.core.nodes.node import Port
-
 import pandas as pd
+
+from tsut.core.nodes.data_source.data_source import (
+    DataSourceConfig,
+    DataSourceMetadata,
+    DataSourceNode,
+    DataSourceRunningConfig,
+)
+from tsut.core.nodes.node import Port
 
 
 class PowderDataSourceMetadata(DataSourceMetadata):
     """Metadata for the RTP powder project data source node."""
-    
+
     node_name: str = "RTP Powder Data Source"
     input_type: str = "None"  # Data sources have no input
     output_type: str = "pd.DataFrame" # Output is a dictionary
