@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 
 from tsut.components.utils.dataframe import filter_columns, filter_dtypes
+from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
+from tsut.core.common.data.tabular_data import TabularDataContext
 from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
@@ -41,11 +43,11 @@ class VarianceFilterConfig(TransformConfig):
 
     running_config: VarianceFilterRunningConfig = VarianceFilterRunningConfig()
     hyperparameters: VarianceFilterHyperparameters = VarianceFilterHyperparameters()
-    in_ports: dict[str, Port] = {"input": Port(type=pd.DataFrame, desc="Input data")}
-    out_ports: dict[str, Port] = {"output": Port(type=pd.DataFrame, desc="output port")} # Pydantic already handles the deepcopy
+    in_ports: dict[str, Port] = {"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="input port")} # Pydantic already handles the deepcopy
+    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="output port")} # Pydantic already handles the deepcopy
 
 
-class VarianceFilter(TransformNode[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, list[str]]]):
+class VarianceFilter(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, dict[str, dict[str, float]]]):
     """Filters out nodes with near-zero variance."""
 
     metadata = VarianceFilterMetadata()
@@ -61,10 +63,10 @@ class VarianceFilter(TransformNode[dict[str, pd.DataFrame], dict[str, pd.DataFra
         filtered_data_columns = filter_columns(data, requested_columns)
         return filter_dtypes(filtered_data_columns, requested_dtypes=["number"])
 
-    def fit(self, data: dict[str, pd.DataFrame]) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Fit the VarianceFilter with the given data."""
         # Isolate the columns to filter based on the running config
-        data_df = data["input"]
+        data_df, data_context = data["input"]
         data_to_filter = self._get_filtered_numeric_data(data_df)
         # Compute the variance for each column
         variance = pd.Series(data_to_filter.var(), index=data_to_filter.columns)
@@ -76,12 +78,14 @@ class VarianceFilter(TransformNode[dict[str, pd.DataFrame], dict[str, pd.DataFra
         if len(columns_to_filter) == 0:
             raise ValueError("No columns to filter based on the given threshold. Consider lowering the threshold or checking the data.")
 
-    def transform(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Transform the data by filtering out the columns with near-zero variance."""
+        data_df, data_context = data["input"]
         columns_to_filter = self._params["columns_to_filter"]
-        invert_columns_to_filter = [col for col in data["input"].columns if col not in columns_to_filter]
-        transformed_data = filter_columns(data["input"], invert_columns_to_filter)
-        return {"output": transformed_data}
+        invert_columns_to_filter = [col for col in data_df.columns if col not in columns_to_filter]
+        transformed_data = filter_columns(data_df, invert_columns_to_filter)
+        data_context.remove_columns(columns_to_filter)
+        return {"output": (transformed_data, data_context)}
 
     def get_params(self) -> dict[str, list[str]]:
         """Get the current parameters of the VarianceFilter, namely the columns that are being filtered out."""

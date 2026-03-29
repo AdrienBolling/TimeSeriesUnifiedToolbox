@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from tsut.components.utils.dataframe import filter_columns, filter_dtypes
+from tsut.components.utils.dataframe import filter_columns
+from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
+from tsut.core.common.data.tabular_data import TabularDataContext
+from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
     TransformHyperParameters,
@@ -38,8 +41,8 @@ class OutlierFilterConfig(TransformConfig[OutlierFilterRunningConfig, OutlierFil
 
     running_config: OutlierFilterRunningConfig = OutlierFilterRunningConfig()
     hyperparameters: OutlierFilterHyperParameters = OutlierFilterHyperParameters()
-    in_ports = {"input": Port(type=pd.DataFrame, desc="Input data")}
-    out_ports = {"output": Port(type=pd.DataFrame, desc="output port")}
+    in_ports: dict[str, Port] = {"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="input port")}
+    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="output port")}
 
 hyperparameter_space = {
     "method": ("choice", ["iqr", "z_score"]),
@@ -48,7 +51,7 @@ hyperparameter_space = {
 }
 
 class OutlierFilter(
-    TransformNode[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, dict[str, float]]]
+    TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, dict[str, dict[str, float]]]
 ):
     """Outlier Filter TransformNode for the TSUT Framework."""
 
@@ -60,81 +63,22 @@ class OutlierFilter(
         self._config = config
         self._params: dict[str, dict[str, float]] = {}
         self._fitted = False
-        self._validate_hyperparameters()
-
-    # --- Validation of hyperparameters and running configuration ---
-
-    def _validate_hyperparameters(self) -> None:
-        """Validate the hyperparameters of the OutlierFilter."""
-        if self._config.hyperparameters.method not in hyperparameter_space["method"][1]:
-            raise ValueError(
-                f"Invalid method: {self._config.hyperparameters.method}. "
-                f"Must be one of {hyperparameter_space['method'][1]}"
-            )
-
-        if self._config.hyperparameters.strategy not in hyperparameter_space["strategy"][1]:
-            raise ValueError(
-                f"Invalid strategy: {self._config.hyperparameters.strategy}. "
-                f"Must be one of {hyperparameter_space['strategy'][1]}"
-            )
-
-        threshold = self._config.hyperparameters.threshold
-        threshold_min = hyperparameter_space["threshold"][1]["min"]
-        threshold_max = hyperparameter_space["threshold"][1]["max"]
-        if not (threshold_min <= threshold <= threshold_max):
-            raise ValueError(
-                f"Invalid threshold: {threshold}. "
-                f"Must be between {threshold_min} and {threshold_max}"
-            )
 
     # --- Helpers ---
 
     def _get_filtered_numeric_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Return only the requested numeric columns."""
+        """Return only the requested numeric columns.
+
+        Assume all data is numerical.
+        """
         requested_columns = self._config.running_config.filtering_columns
-        filtered_data_columns = filter_columns(data, requested_columns)
-        filtered_data_dtypes = filter_dtypes(filtered_data_columns, requested_dtypes=["number"])
-        return filtered_data_dtypes
-
-    def _series_to_param_dict(self, values: pd.Series | float, columns: pd.Index) -> dict[str, float]:
-        """Convert scalar/Series outputs into a serializable dict keyed by column name."""
-        if np.isscalar(values):
-            if len(columns) != 1:
-                raise ValueError(
-                    "Received scalar statistic for multiple columns, which is ambiguous."
-                )
-            return {str(columns[0]): float(values)}
-
-        if not isinstance(values, pd.Series):
-            values = pd.Series(values, index=columns)
-
-        return {str(col): float(values[col]) for col in columns}
-
-    def _param_dict_to_series(self, name: str, columns: pd.Index) -> pd.Series:
-        """Convert stored dict params back to a Series aligned on current columns."""
-        if name not in self._params:
-            raise ValueError(f"Missing parameter '{name}'. Did you call fit()?")
-
-        param_values = self._params[name]
-        missing_columns = [str(col) for col in columns if str(col) not in param_values]
-        if missing_columns:
-            raise ValueError(
-                f"Stored parameters for '{name}' are missing columns: {missing_columns}"
-            )
-
-        return pd.Series(
-            {col: float(param_values[str(col)]) for col in columns},
-            index=columns,
-            dtype=float,
-        )
+        return filter_columns(data, requested_columns)
 
     # --- Implement abstract methods from TransformNode ---
 
-    def fit(self, data: dict[str, pd.DataFrame]) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Fit the OutlierFilter with the given data."""
-        self._validate_hyperparameters()
-        self._params = {}
-        data_df = data["input"]
+        data_df, _ = data["input"]
 
         if self._config.hyperparameters.method == "iqr":
             self._fit_iqr_method(data_df)
@@ -145,13 +89,12 @@ class OutlierFilter(
 
         self._fitted = True
 
-    def transform(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Apply the OutlierFilter to the given data."""
         if not self._fitted:
             raise RuntimeError("OutlierFilter must be fitted before calling transform().")
-
-        outliers = self._detect_outliers(data["input"])
-        return {"output": self._handle_outliers(data["input"].copy(), outliers)}
+        outliers = self._detect_outliers(data["input"][0])
+        return {"output": (self._handle_outliers(data["input"][0], outliers), data["input"][1])}
 
     def get_params(self) -> dict[str, dict[str, float]]:
         """Get the current parameters of the OutlierFilter."""
@@ -190,24 +133,23 @@ class OutlierFilter(
         filtered_data = self._get_filtered_numeric_data(data)
         columns = filtered_data.columns
 
-        q1 = filtered_data.quantile(0.25)
-        q3 = filtered_data.quantile(0.75)
+        q1 = pd.Series(filtered_data.quantile(0.25), index=columns).to_numpy()
+        q3 = pd.Series(filtered_data.quantile(0.75), index=columns).to_numpy()
         iqr = q3 - q1
 
-        self._params["q1"] = self._series_to_param_dict(q1, columns)
-        self._params["q3"] = self._series_to_param_dict(q3, columns)
-        self._params["iqr"] = self._series_to_param_dict(iqr, columns)
+        self._params["q1"] = {str(col): float(q1_val) for col, q1_val in zip(columns, q1, strict=False)}
+        self._params["q3"] = {str(col): float(q3_val) for col, q3_val in zip(columns, q3, strict=False)}
+        self._params["iqr"] = {str(col): float(iqr_val) for col, iqr_val in zip(columns, iqr, strict=False)}
 
     def _fit_z_score_method(self, data: pd.DataFrame) -> None:
         """Fit the Z-score method for outlier detection."""
         filtered_data = self._get_filtered_numeric_data(data)
         columns = filtered_data.columns
 
-        df_mean = filtered_data.mean()
-        df_std = pd.Series(filtered_data.std()).replace(0, np.nan)
-
-        self._params["mean"] = self._series_to_param_dict(df_mean, columns)
-        self._params["std"] = self._series_to_param_dict(df_std, columns)
+        df_mean = pd.Series(filtered_data.mean()).to_numpy()
+        df_std = pd.Series(filtered_data.std()).replace(0, np.nan).to_numpy()  # Replace std of 0 with NaN to avoid division by zero
+        self._params["mean"] = {str(col): float(mean_val) for col, mean_val in zip(columns, df_mean, strict=False)}
+        self._params["std"] = {str(col): float(std_val) for col, std_val in zip(columns, df_std, strict=False)}
 
     # --- Detection methods ---
 
@@ -219,9 +161,9 @@ class OutlierFilter(
         filtered_data = self._get_filtered_numeric_data(data)
         columns = filtered_data.columns
 
-        q1 = self._param_dict_to_series("q1", columns)
-        q3 = self._param_dict_to_series("q3", columns)
-        iqr = self._param_dict_to_series("iqr", columns)
+        q1 = pd.Series(self._params["q1"], index=columns)
+        q3 = pd.Series(self._params["q3"], index=columns)
+        iqr = pd.Series(self._params["iqr"], index=columns)
 
         lower_bound = q1 - self._config.hyperparameters.threshold * iqr
         upper_bound = q3 + self._config.hyperparameters.threshold * iqr
@@ -236,8 +178,8 @@ class OutlierFilter(
         filtered_data = self._get_filtered_numeric_data(data)
         columns = filtered_data.columns
 
-        mean = self._param_dict_to_series("mean", columns)
-        std = self._param_dict_to_series("std", columns)
+        mean = pd.Series(self._params["mean"], index=columns)
+        std = pd.Series(self._params["std"], index=columns)
 
         z_scores = filtered_data.sub(mean, axis=1).div(std, axis=1)
         return z_scores.abs() > self._config.hyperparameters.threshold
@@ -250,7 +192,7 @@ class OutlierFilter(
         If a sample is an outlier in any feature, it gets removed.
         """
         mask = ~outliers.any(axis=1)
-        return data.loc[mask]
+        return pd.DataFrame(data.loc[mask], columns=data.columns)
 
     def _cap_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
         """Cap outliers in the selected numeric columns."""
@@ -258,16 +200,16 @@ class OutlierFilter(
         columns = filtered_data.columns
 
         if self._config.hyperparameters.method == "iqr":
-            q1 = self._param_dict_to_series("q1", columns)
-            q3 = self._param_dict_to_series("q3", columns)
-            iqr = self._param_dict_to_series("iqr", columns)
+            q1 = pd.Series(self._params["q1"], index=columns)
+            q3 = pd.Series(self._params["q3"], index=columns)
+            iqr = pd.Series(self._params["iqr"], index=columns)
 
             lower_bound = q1 - self._config.hyperparameters.threshold * iqr
             upper_bound = q3 + self._config.hyperparameters.threshold * iqr
 
         elif self._config.hyperparameters.method == "z_score":
-            mean = self._param_dict_to_series("mean", columns)
-            std = self._param_dict_to_series("std", columns)
+            mean = pd.Series(self._params["mean"], index=columns)
+            std = pd.Series(self._params["std"], index=columns)
 
             lower_bound = mean - self._config.hyperparameters.threshold * std
             upper_bound = mean + self._config.hyperparameters.threshold * std

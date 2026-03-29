@@ -1,7 +1,10 @@
 """Missing Rate Filter for feature selection."""
-# pyright: reportIncompatibleVariableOverride=false
+
 import pandas as pd
 
+from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
+from tsut.core.common.data.tabular_data import TabularDataContext
+from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
     TransformHyperParameters,
@@ -33,15 +36,15 @@ class MissingRateHyperParameters(TransformHyperParameters):
     For example, in some transforms, this could be the window size for a rolling window transform, etc.
     """
 
-    threshold: float = 0.95  # Threshold for missing rate to filter features. Default is 0.5 (i.e., drop features with more than 50% missing values).
+    threshold: float = 0.5  # Threshold for missing rate to filter features. Default is 0.5 (i.e., drop features with more than 50% missing values).
 
 class MissingRateFilterConfig(TransformConfig[MissingRateRunningConfig, MissingRateHyperParameters]):
     """Configuration for the MissingRateFilter TransformNode in the TSUT Framework."""
 
     running_config: MissingRateRunningConfig = MissingRateRunningConfig()
     hyperparameters: MissingRateHyperParameters = MissingRateHyperParameters()
-    in_ports = {"input": Port(type=pd.DataFrame, desc="Input data")}
-    out_ports = {"output": Port(type=pd.DataFrame, desc="output port")}
+    in_ports: dict[str, Port] = {"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Input DataFrame with features to filter based on missing rate")}
+    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch feature", desc="Output DataFrame with features filtered based on missing rate")}
 
 hyperparameter_space = {
     "threshold": {
@@ -52,26 +55,39 @@ hyperparameter_space = {
     }
 }
 
-class MissingRateFilterNode(TransformNode[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, list[str]]]):
+class MissingRateFilterNode(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, dict[str, list[str]]]):
     """TransformNode implementation for filtering features based on their missing rate in the TSUT Framework."""
 
     metadata = MissingRateFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: MissingRateFilterConfig) -> None:
+        """Initialize the MissingRateFilterNode with the given configuration."""
         self._config = config
         self._hyperparameters = config.hyperparameters
         self._params: dict[str, list[str]] = {} # This will hold the parameters after fitting, namely the columns to filter out.
 
-    def fit(self, data: dict[str, pd.DataFrame]) -> None:
+    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
         """Fit the MissingRateFilterNode with the given data."""
         # Compute the missing rate for each column
-        missing_rate = pd.Series(data["input"].isna().mean(), index=data["input"].columns)
+        df, _ = data["input"]
+        missing_rate = pd.Series(df.isna().mean(), index=df.columns)
         # Determine which columns to filter out based on the threshold
         columns_to_filter = pd.Series(missing_rate[missing_rate > self._hyperparameters.threshold]).index # Pyright being dumb, error will never happen here.
         self._params = {"columns_to_filter": list(columns_to_filter)}
 
-    def transform(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
         """Apply the missing rate filter to the given data."""
+        df, context = data["input"]
         columns_to_filter = self._params["columns_to_filter"]
-        return {"output": data["input"].drop(columns=columns_to_filter)}
+        filtered_df = df.drop(columns=columns_to_filter)
+        context.remove_columns(columns_to_filter)
+        return {"output": (filtered_df, context)}
+
+    def get_params(self) -> dict[str, list[str]]:
+        """Return the parameters of the MissingRateFilterNode, namely the columns to filter out."""
+        return self._params
+
+    def set_params(self, params: dict[str, list[str]]) -> None:
+        """Set the parameters of the MissingRateFilterNode, namely the columns to filter out."""
+        self._params = params
