@@ -52,6 +52,7 @@ class RowConcatenate(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFram
 
 
     def __init__(self, *, config: TransformConfig) -> None:
+        """Initialize the row concatenation transform with its runtime configuration."""
         self._config = config
 
     def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 # ============================================================
 
 def _in_ipython_notebook() -> bool:
+    """Return whether execution appears to run inside a notebook kernel."""
     try:
         from IPython import get_ipython
         shell = get_ipython()
@@ -19,22 +20,27 @@ def _in_ipython_notebook() -> bool:
 
 
 def _is_class_like(obj: Any) -> bool:
+    """Return ``True`` when ``obj`` is a class object."""
     return inspect.isclass(obj)
 
 
 def _safe_name(obj: Any) -> str:
+    """Return a human-readable object name with a safe fallback."""
     return getattr(obj, "__name__", type(obj).__name__)
 
 
 def _safe_qualname(obj: Any) -> str:
+    """Return a qualified object name with a safe fallback."""
     return getattr(obj, "__qualname__", _safe_name(obj))
 
 
 def _safe_module(obj: Any) -> str:
+    """Return the module name of an object if available."""
     return getattr(obj, "__module__", "")
 
 
 def _safe_doc_first_line(obj: Any) -> str:
+    """Return the first non-empty line of an object's docstring."""
     try:
         doc = inspect.getdoc(obj)
         if not doc:
@@ -45,6 +51,7 @@ def _safe_doc_first_line(obj: Any) -> str:
 
 
 def _safe_file(obj: Any) -> str:
+    """Return source file path for an object if introspection is possible."""
     try:
         return inspect.getsourcefile(obj) or ""
     except Exception:
@@ -52,6 +59,7 @@ def _safe_file(obj: Any) -> str:
 
 
 def _safe_lineno(obj: Any) -> int | None:
+    """Return the first source line number for an object when available."""
     try:
         _, lineno = inspect.getsourcelines(obj)
         return lineno
@@ -90,12 +98,14 @@ def _serialize_value(value: Any) -> Any:
 
 
 def _format_plain_value(value: Any) -> str:
+    """Format serialized values for compact plain-text display."""
     if isinstance(value, dict) and value.get("__kind__") == "class":
         return str(value.get("display", ""))
     return str(value)
 
 
 def _clip(s: str, width: int) -> str:
+    """Clip a string to ``width`` characters using an ellipsis."""
     return s if len(s) <= width else s[: max(0, width - 1)] + "…"
 
 
@@ -598,4 +608,3 @@ class Registry:
                 return self._plain_text_table(columns=columns)
 
         return self._plain_text_table(columns=columns)
-

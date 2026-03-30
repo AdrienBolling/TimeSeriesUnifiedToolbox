@@ -5,6 +5,7 @@ import pkgutil
 # This allows us to keep the registration of nodes organized in their respective modules, while still ensuring that all nodes are registered when the components package is imported.
 
 def _auto_discovery() -> None:
+    """Import component registration modules and invoke their ``register_nodes`` hooks."""
     for module_info in pkgutil.walk_packages(__path__, prefix=__name__ + "."):
         if module_info.name.endswith("._register"):
             mod = importlib.import_module(module_info.name)
@@ -15,5 +16,4 @@ def _auto_discovery() -> None:
                     print(f"Successfully registered nodes from module: {module_info.name}")
             else:
                 print(f"Warning: Module {module_info.name} does not have a register_nodes function. Skipping registration for this module.")
-
 

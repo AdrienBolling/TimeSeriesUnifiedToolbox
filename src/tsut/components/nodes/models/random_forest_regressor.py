@@ -76,6 +76,7 @@ class RandomForestRegressorNode(Model[np.ndarray, TabularDataContext, np.ndarray
 
     @property
     def _model_params(self) -> dict[str, Any]:
+        """Return underlying scikit-learn model parameters."""
         return self._model.get_params()
 
     def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
@@ -107,4 +108,3 @@ class RandomForestRegressorNode(Model[np.ndarray, TabularDataContext, np.ndarray
         """Set the model parameters."""
         self._params_target_context = params["target_context"]
         self._model.set_params(**params["model_params"])
-
