@@ -185,6 +185,7 @@ class Registry:
         self._registry[name] = dict(fields)
 
     def unregister(self, name: str) -> None:
+        """Remove an entry from the registry by name."""
         if name not in self._registry:
             message = (
                 f"{self._entity.capitalize()} '{name}' is not registered. Cannot unregister a non-existent {self._entity}."
@@ -193,6 +194,7 @@ class Registry:
         del self._registry[name]
 
     def get(self, name: str) -> dict[str, Any]:
+        """Return a registered entry by name."""
         if name not in self._registry:
             message = (
                 f"{self._entity.capitalize()} '{name}' is not registered. Please register the {self._entity} before trying to retrieve it."
@@ -201,27 +203,35 @@ class Registry:
         return self._registry[name]
 
     def __getitem__(self, name: str) -> dict[str, Any]:
+        """Allow dict-like item access to registered entries."""
         return self.get(name)
 
     def __contains__(self, name: str) -> bool:
+        """Return whether an entry exists in the registry."""
         return name in self._registry
 
     def __len__(self) -> int:
+        """Return the number of registered entries."""
         return len(self._registry)
 
     def __iter__(self):
+        """Iterate over registered entry names."""
         return iter(self._registry)
 
     def __str__(self) -> str:
+        """Return a human-readable summary of the registry."""
         return f"{self._entity.capitalize()}Registry with {len(self._registry)} registered {self._entity}s: {list(self._registry.keys())}"
 
     def __repr__(self) -> str:
+        """Return a debug representation of the registry internals."""
         return f"{self._entity.capitalize()}Registry(registry={self._registry})"
 
     def keys(self) -> list[str]:
+        """Return all registered entry names."""
         return list(self._registry.keys())
 
     def items(self):
+        """Return ``(name, fields)`` pairs for all registered entries."""
         return self._registry.items()
 
     # --------------------------------------------------------
@@ -306,6 +316,7 @@ class Registry:
         max_width: int = 140,
         max_col_width: int = 32,
     ) -> str:
+        """Render the registry as a plain-text table."""
         rows = self._rows()
         if not rows:
             return "<empty registry>"
@@ -358,6 +369,7 @@ class Registry:
         include_metadata: bool = False,
         include_source_inspector: bool = True,
     ):
+        """Render an interactive registry explorer in notebook environments."""
         import ipywidgets as widgets
         import pandas as pd
         from IPython.display import HTML, display
