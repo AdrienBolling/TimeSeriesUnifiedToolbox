@@ -4,22 +4,20 @@ This class serves as a blueprint for implementing various pipeline execution str
 """
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from tsut.core.common.data.data import Data, DataContext
 from tsut.core.common.enums import NodeExecutionMode
 from tsut.core.pipeline.pipeline import Pipeline
 from tsut.core.nodes.node import Node
-
-D_O = TypeVar("D_O")  # Output data type of the pipeline execution
-M = TypeVar("M")  # Metrics output type for evaluation results
 
 class RunnerConfig(BaseModel):
     """Define the configuration schema for a PipelineRunner."""
 
 
-class PipelineRunner[D_O, M](ABC):
+class PipelineRunner(ABC):
     """Define the interface for a TSUT PipelineRunner.
 
     The goal of the PipelineRunner is to encapsulate all logic related to effectively run a pipeline. (Such as training, tuning, evaluating, etc.)
@@ -59,11 +57,11 @@ class PipelineRunner[D_O, M](ABC):
         """Get the mapping of node names to their instantiated objects in the pipeline."""
         return self._pipeline.node_objects
 
-    def get_params(self) -> dict[str, dict[str, any]]:
+    def get_params(self) -> dict[str, dict[str, Any]]:
         """Get the parameters of all nodes in the pipeline."""
         return self._pipeline.get_params()
 
-    def set_params(self, params: dict[str, dict[str, any]]) -> None:
+    def set_params(self, params: dict[str, dict[str, Any]]) -> None:
         """Set the parameters of all nodes in the pipeline."""
         self._pipeline.set_params(params=params)
 
@@ -77,11 +75,11 @@ class PipelineRunner[D_O, M](ABC):
         ...
 
     @abstractmethod
-    def evaluate(self) -> dict[str, M]:
+    def evaluate(self) -> dict[str, tuple[Data, DataContext]]:
         """Evaluate the pipeline."""
         ...
 
     @abstractmethod
-    def infer(self) -> dict[str, D_O]:
+    def infer(self) -> dict[str, tuple[Data, DataContext]]:
         """Run inference with the pipeline."""
         ...

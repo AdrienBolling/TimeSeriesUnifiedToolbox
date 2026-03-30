@@ -22,7 +22,7 @@ from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner, RunnerCon
 class SmartRunnerConfig(RunnerConfig):
     """Configuration for the SmartRunner."""
 
-class TabularSmartRunner(PipelineRunner[TabularData, Any]): # Work on some better typing for the metrics output in the future, maybe with a generic M for the metrics output type.
+class TabularSmartRunner(PipelineRunner): # Work on some better typing for the metrics output in the future, maybe with a generic M for the metrics output type.
     # I think it works with any Data subclass, but there needs to be another layer of checking for the data "class" (e.g. time series, tabular, etc)
     """SmartRunner implementation for the TSUT Framework.
 
