@@ -22,7 +22,7 @@ wheels/
 
 
 # Fake data folders
-data/
+# data/
 
 # Jupyter Notebook tests
 ipynb/
