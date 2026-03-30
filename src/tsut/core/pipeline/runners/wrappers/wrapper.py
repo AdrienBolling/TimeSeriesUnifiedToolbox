@@ -3,15 +3,12 @@
 from abc import ABC, abstractmethod
 
 from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 from tsut.core.nodes.node import Node
 
 from typing import Any
 
-class PipelineRunnerWrapperSettings(BaseSettings):
-    """Define the configuration schema for a PipelineRunnerWrapper."""
-
-class PipelineRunnerWrapper[D_O, M](PipelineRunner[D_O, M], ABC):
+class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
     """Define the interface for a PipelineRunnerWrapper.
 
     The goal of the PipelineRunnerWrapper is to wrap around a PipelineRunner and add additional functionality to it. (Such as tuning, logging, etc.)
@@ -22,11 +19,11 @@ class PipelineRunnerWrapper[D_O, M](PipelineRunner[D_O, M], ABC):
         self,
         pipeline_runner: PipelineRunner[D_O, M],
         *,
-        settings: PipelineRunnerWrapperSettings,
+        config: C,
     ) -> None:
         """Initialize the PipelineRunnerWrapper with a pipeline runner and configuration."""
         self._pipeline_runner = pipeline_runner
-        self._settings = settings
+        self._config = config
 
     # --- Convenience API
 
@@ -41,14 +38,9 @@ class PipelineRunnerWrapper[D_O, M](PipelineRunner[D_O, M], ABC):
         return self._pipeline_runner.unwrapped if hasattr(self._pipeline_runner, 'unwrapped') else self._pipeline_runner
 
     @property
-    def settings(self) -> PipelineRunnerWrapperSettings:
-        """Get the settings of this wrapper."""
-        return (self._settings)
-
-    @property
-    def config(self) -> PipelineRunnerWrapperSettings:
+    def config(self) -> C:
         """Get the configuration of this wrapper."""
-        return self._pipeline_runner.config
+        return self._config
 
     @property
     def mode(self) -> str:
