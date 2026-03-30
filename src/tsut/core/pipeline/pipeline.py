@@ -8,15 +8,17 @@ from functools import wraps
 from typing import Any
 
 import matplotlib.pyplot as plt
+import mplcursors
 import networkx as nx
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 from tsut.core.common.data.data import Data
+from tsut.core.common.version import Version
 from tsut.core.nodes.metrics.metric_node import MetricNodeConfig
 from tsut.core.nodes.node import Node, NodeConfig, NodeType, Port
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
-from tsut.core.pipeline.render import plot_graph_with_metadata
+from tsut.core.pipeline.render import render_pipeline_graph, render_pipeline_graph_plotly
 
 _ = Data  # For type checking purposes
 
@@ -56,6 +58,8 @@ class PipelineConfig(BaseModel):
 
     nodes: dict[str, tuple[str, NodeConfig | None]] = {}
     edges: list[Edge] = []
+    name: str = "My Pipeline"
+    version: Version = Version(major=0, minor=1, patch=0)
     settings: PipelineSettings = PipelineSettings()
 
 
@@ -140,7 +144,7 @@ class Pipeline:
 
         def filter_edge(u: str, v: str) -> bool:
             # Filter out edges connected to metric nodes
-            return not filter_node(u) or not filter_node(v)
+            return filter_node(u) and filter_node(v)
         return nx.subgraph_view(self.graph, filter_node=filter_node, filter_edge=filter_edge)
 
     @property
@@ -213,24 +217,55 @@ class Pipeline:
         # Update the node attributes in the graph representation
         self._graph.nodes[node_name].update(new_config.model_dump())
 
-    def render(self, title: str = "Pipeline Graph", layout: str = "spring") -> Any:
+    def render(self, title: str | None = None, backend: str = "plotly", figsize: tuple[int, int] = (10, 8)) -> Any:
         """Render the pipeline graph using iplotx.
 
         Args:
             title (str): The title of the graph.
             layout (str): The layout algorithm to use for positioning the nodes. Options include "spring", "kamada_kawai", etc.
+            backend (str): The backend to use for rendering. Options include "matplotlib", "plotly", etc.
 
         Returns:
             The rendered graph object from iplotx.
 
         """
-        fig, ax, artist = plot_graph_with_metadata(
-            G=self._graph,
-            node_objects=self.node_objects,
-            title=title,
-            layout=layout,
-        )
-        plt.plot
+        if title is None:
+            title = self._config.name
+        if backend == "matplotlib":
+            fig, ax, artist =render_pipeline_graph(self, title=title, figsize=figsize)
+            plt.plot()
+        elif backend == "plotly":
+            fig = render_pipeline_graph_plotly(self, title=title, figsize=figsize)
+            fig.show()
+        else:
+            message = f"Unsupported backend '{backend}'. Supported backends are 'matplotlib' and 'plotly'."
+            raise ValueError(message)
+        
+    def render_html(self, title: str | None = None, backend: str = "plotly", figsize: tuple[int, int] = (10, 8)) -> str:
+        """Render the pipeline graph to an HTML string.
+
+        Args:
+            title (str): The title of the graph.
+            layout (str): The layout algorithm to use for positioning the nodes. Options include "spring", "kamada_kawai", etc.
+            backend (str): The backend to use for rendering. Options include "matplotlib", "plotly", etc.
+
+        Returns:
+            str: The rendered graph as an HTML string.
+
+        """
+        if title is None:
+            title = self._config.name
+        if backend == "matplotlib":
+            fig, ax, artist =render_pipeline_graph(self, title=title, figsize=figsize)
+            html_str = mplcursors.cursor(artist).html
+            plt.close(fig)  # Close the figure to free up resources
+            return html_str
+        elif backend == "plotly":
+            fig = render_pipeline_graph_plotly(self, title=title, figsize=figsize)
+            return fig.to_html(full_html=False)
+        else:
+            message = f"Unsupported backend '{backend}'. Supported backends are 'matplotlib' and 'plotly'."
+            raise ValueError(message)
 
     def get_params(self) -> dict[str, dict[str, Any]]:
         """Get the aggregate of all parameters of the nodes in the pipeline"""
@@ -269,6 +304,22 @@ class Pipeline:
                 return node_name
         message = "No sink node found in the pipeline."
         raise ValueError(message)
+    
+    def get_source_node_name(self) -> str:
+        """Get the name of the source node in the pipeline."""
+        for node_name, (_, node_config) in self._config.nodes.items():
+            if node_config.node_type == NodeType.SOURCE:
+                return node_name
+        message = "No source node found in the pipeline."
+        raise ValueError(message)
+    
+    def get_node_config(self, node_name: str) -> NodeConfig:
+        """Get the configuration of a node in the pipeline."""
+        if node_name not in self._config.nodes:
+            message = f"Node with name '{node_name}' does not exist in the pipeline."
+            raise ValueError(message)
+        _, node_config = self._config.nodes[node_name]
+        return node_config
 
     # --- Internal methods for object instantiation
 
