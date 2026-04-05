@@ -4,14 +4,16 @@ This class serves as a blueprint for implementing various pipeline execution str
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel
 
-from tsut.core.common.data.data import Data, DataContext
+from tsut.core.common.data.data import Data
 from tsut.core.common.enums import NodeExecutionMode
-from tsut.core.pipeline.pipeline import Pipeline
 from tsut.core.nodes.node import Node
+from tsut.core.pipeline.pipeline import Pipeline
+
 
 class RunnerConfig(BaseModel):
     """Define the configuration schema for a PipelineRunner."""
@@ -66,7 +68,7 @@ class PipelineRunner(ABC):
         self._pipeline.set_params(params=params)
 
     # --- API to implement for any PipelineRunner implementation ---
-    # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself. 
+    # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself.
     # We will see where it belongs on the long run.
 
     @abstractmethod
@@ -75,11 +77,11 @@ class PipelineRunner(ABC):
         ...
 
     @abstractmethod
-    def evaluate(self) -> dict[str, tuple[Data, DataContext]]:
+    def evaluate(self) -> Mapping[str, Data]:
         """Evaluate the pipeline."""
         ...
 
     @abstractmethod
-    def infer(self) -> dict[str, tuple[Data, DataContext]]:
+    def infer(self) -> Mapping[str, Data]:
         """Run inference with the pipeline."""
         ...
