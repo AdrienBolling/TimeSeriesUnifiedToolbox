@@ -1,6 +1,7 @@
 """Define the base Model class for the TSUT Framework."""
 
 from abc import ABC, abstractmethod
+from typing import TypeVar
 
 from pydantic.main import BaseModel
 
@@ -17,12 +18,15 @@ class ModelMetadata(NodeMetadata):
 
     _node_type: NodeType = NodeType.MODEL
     trainable: bool = True  # Models are trainable by default, but this can be overridden for specific models that are not trainable (e.g., a model that is just a wrapper around a pre-trained model that cannot be further trained).
+
+
 class ModelRunningConfig(BaseModel):
     """Running configuration for a Model in the TSUT Framework.
 
     This will usually be used for execution parameters that are not relevant for the definition of the model itself, but rather for how to run it.
     For example, in most ML models, this could be very specific training parameters such as whether to enable bootstrapping, the precise backend to use for computations etc.
     """
+
 
 class ModelHyperParameters(BaseModel):
     """Hyperparameters for a Model in the TSUT Framework.
@@ -31,13 +35,17 @@ class ModelHyperParameters(BaseModel):
     For example, in most ML models, this could be the learning rate, the number of layers, etc.
     """
 
-class ModelConfig(NodeConfig):
+
+H = TypeVar("H", bound=ModelHyperParameters)
+R = TypeVar("R", bound=ModelRunningConfig)
+
+
+class ModelConfig[H, R](NodeConfig):
     """Base configuration for all Models in the TSUT Framework."""
 
     node_type: NodeType = NodeType.MODEL
-    running_config: ModelRunningConfig = ModelRunningConfig()
-    hyperparameters: ModelHyperParameters = ModelHyperParameters()
-
+    hyperparameters: H | None = None
+    running_config: R | None = None
 
 
 class Model[D_I, D_C_I, D_O, D_C_O, P](
@@ -78,12 +86,12 @@ class Model[D_I, D_C_I, D_O, D_C_O, P](
     # --- API convenience ---
 
     @property
-    def running_config(self) -> ModelRunningConfig:
+    def running_config(self) -> ModelRunningConfig | None:
         """Property to get the model running configuration."""
         return self._config.running_config
 
     @property
-    def hyperparameters(self) -> ModelHyperParameters:
+    def hyperparameters(self) -> ModelHyperParameters | None:
         """Property to get the model hyperparameters."""
         return self._config.hyperparameters
 

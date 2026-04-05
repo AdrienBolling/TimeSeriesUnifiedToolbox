@@ -14,6 +14,7 @@ class TransformMetadata(NodeMetadata):
     _node_type: NodeType = NodeType.TRANSFORM
     trainable: bool = True  # Transforms are trainable by default, but this can be overridden for specific transforms that are not trainable (e.g., a transform that is just a wrapper around a pre-trained model that cannot be further trained).
 
+
 class TransformRunningConfig(BaseModel):
     """Running configuration for a TransformNode in the TSUT Framework.
 
@@ -29,15 +30,17 @@ class TransformHyperParameters(BaseModel):
     For example, in some transforms, this could be the window size for a rolling window transform, etc.
     """
 
+
 R = TypeVar("R", bound=TransformRunningConfig)
 H = TypeVar("H", bound=TransformHyperParameters)
 
-class TransformConfig[R, H](NodeConfig):
+
+class TransformConfig[H, R](NodeConfig):
     """Base metadata configuration for all Transform nodes in the TSUT Framework."""
 
     node_type: NodeType = NodeType.TRANSFORM
-    running_config: R
-    hyperparameters: H
+    hyperparameters: H | None = None
+    running_config: R | None = None
 
 
 class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC):
@@ -58,7 +61,9 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
         ...
 
     @abstractmethod
-    def transform(self, data: dict[str, tuple[D_I, D_C_I]]) -> dict[str, tuple[D_O, D_C_O]]:
+    def transform(
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Apply the transform to the given data."""
         ...
 
@@ -75,12 +80,12 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
     # --- API convenience ---
 
     @property
-    def running_config(self) -> TransformRunningConfig:
+    def running_config(self) -> TransformRunningConfig | None:
         """Convenience property to access the running configuration of the transform."""
         return self._config.running_config
 
     @property
-    def hyperparameters(self) -> TransformHyperParameters:
+    def hyperparameters(self) -> TransformHyperParameters | None:
         """Convenience property to access the hyperparameters of the transform."""
         return self._config.hyperparameters
 
@@ -101,7 +106,9 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
         self.fit(data=data)
         self._fitted = True
 
-    def node_transform(self, data: dict[str, tuple[D_I, D_C_I]]) -> dict[str, tuple[D_O, D_C_O]]:
+    def node_transform(
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Override of the Node's transform method to call the TransformNode's transform method."""
         if hasattr(self, "_fitted") and not self._fitted:
             raise ValueError("TransformNode must be fitted before calling transform.")

@@ -11,13 +11,16 @@ from pydantic import BaseModel, PrivateAttr
 from tsut.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
+    DataStructureEnum,
 )
 from tsut.core.common.mixins.mixin import MixinSettings
 
 P = ParamSpec("P")
 
+
 class NodeMetadata(BaseModel):
     """Metadata for a Node in a TSUT Pipeline."""
+
 
 class NodeType(StrEnum):
     """Define the types of Nodes available in a TSUT Pipeline."""
@@ -33,9 +36,12 @@ class NodeType(StrEnum):
 class Port(BaseModel):
     """Model of a port in a TSUT Node."""
 
-    arr_type: ArrayLikeEnum # The type of data array that this port accepts or outputs, e.g. pd.DataFrame, np.ndarray, etc.
-    data_category: DataCategoryEnum # The category of data that this port accepts or outputs, e.g. "numerical", "categorical", "mixed", etc.
-    data_shape: str # the shape of the data that this ports accepts or outputs for jaxtyping checking. Find the convention for the data shape string at https://docs.kidger.site/jaxtyping/api/array/#shape
+    arr_type: ArrayLikeEnum  # The type of data array that this port accepts or outputs, e.g. pd.DataFrame, np.ndarray, etc.
+    data_structure: DataStructureEnum = (
+        DataStructureEnum.DATA  # The data structure that this port accepts or outputs, e.g. TabularData, TimeSeriesData, etc.
+    )
+    data_category: DataCategoryEnum  # The category of data that this port accepts or outputs, e.g. "numerical", "categorical", "mixed", etc.
+    data_shape: str  # the shape of the data that this ports accepts or outputs for jaxtyping checking. Find the convention for the data shape string at https://docs.kidger.site/jaxtyping/api/array/#shape
     desc: str
     mode: list[str] = ["all"]
 
@@ -85,10 +91,6 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
 
         The only common denomination across all Nodes are their input and output ports.
         """
-        self.node_type: NodeType = config.node_type
-        self.in_ports: dict[str, Port] = config.in_ports
-        self.out_ports: dict[str, Port] = config.out_ports
-
         if not self._config:
             self._config = config
 
@@ -101,6 +103,11 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
     def out_ports(self) -> dict[str, Port]:
         """Get the output ports of the Node."""
         return self._config.out_ports
+
+    @property
+    def node_type(self) -> NodeType:
+        """Get the type of the Node."""
+        return self._config.node_type
 
     @property
     def config(self) -> NodeConfig:
@@ -147,13 +154,13 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         """
         try:
             super().__init__(config=config)  # type: ignore
-        except TypeError: # In case we go back to object, object.__init__ doesn't take any argument, so we need to catch the TypeError and call it without arguments
+        except TypeError:  # In case we go back to object, object.__init__ doesn't take any argument, so we need to catch the TypeError and call it without arguments
             super().__init__()  # type: ignore
         # If super has a post_init, call it
         if getattr(
             super(), "__post_init__", None
         ):  # INFO: Ignore the error here if pyright raises one, it's being dumb
-            super().__post_init__(config=config) # type: ignore
+            super().__post_init__(config=config)  # type: ignore
             # INFO: Although it may seem useless, it's used in case of multiple inheritance with Mixins and such
 
     @property
