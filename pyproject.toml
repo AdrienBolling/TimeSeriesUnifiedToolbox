@@ -58,7 +58,8 @@ ignore = [
   "D213",   # Multi-line docstring summary should start at the first line
   "ANN401", # Missing type annotation for self in method
   "F722",   # Syntax error in forward annotation (jaxtyping syntax)
-  "RUF012" # Mutable class attributes should be annotated with `typing.ClassVar`
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "SIM118", # use key in dict instead of key in dict.keys() -> there's a conflict when iterating over the keys of a dict
 ]
 
 [tool.ruff.lint.per-file-ignores]
