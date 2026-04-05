@@ -1,325 +1,292 @@
+from __future__ import annotations
+
+import html
+import math
 from typing import TYPE_CHECKING, Any
 
-import iplotx as ipx
-import matplotlib.pyplot as plt
-import mplcursors
 import networkx as nx
+import numpy as np
+import plotly.graph_objects as go
 
-from tsut.core.common.version import Version
-from tsut.core.nodes.node import Node, NodeConfig, NodeType
+from tsut.core.common.enums import NodeExecutionMode
+from tsut.core.nodes.node import NodeConfig, NodeType
 
 if TYPE_CHECKING:
     from tsut.core.pipeline.pipeline import Edge, Pipeline
 
-import html
-import math
 
-import plotly.graph_objects as go
+# =============================================================================
+# Graph structure helpers
+# =============================================================================
 
 
 def split_execution_graph_into_columns(
-        graph: nx.Graph,
-        graph_wo_metrics: nx.Graph,
-        source_node: str,
-        sink_node: str
-) -> list[set[str]]:
-    """Split the execution graph of the pipeline into columns for visualization.a"""
-    # Get the graph from the pipeline, without the metric nodes for now since they will be placed in the bottom row
-    gr = graph_wo_metrics
-    # Initialize a dictionary to hold the column index for each node
-    node_columns = dict.fromkeys(gr.nodes)
-    # First, assign columns to source and sink nodes
-    source = source_node
-    sink = sink_node
+    pipeline: Pipeline,
+) -> dict[int, set[str]]:
+    """Group nodes into layout columns for visualization.
 
-    node_columns[source] = 0
-    node_columns[sink] = -1  # Temporarily assign sink to column -1
+    The main execution graph is laid out from left to right using shortest-path
+    distance to the sink node. Metric nodes are forced into a dedicated column.
+    """
+    graph = pipeline.graph
+    main_graph = pipeline.graph_wo_metrics
+    sink_node = pipeline.sink_node_name
+    node_columns: dict[str, int | None] = dict.fromkeys(main_graph.nodes)
 
-    # Find the shortest path from each node to the sink to determine its depth
-    shortest_paths_to_sink = nx.shortest_path_length(gr, target=sink)
-
-    # Now we know the depth of each node, we can assign columns
-    # The sink node should be in the right-most column, which is max depth + 1
+    shortest_paths_to_sink = nx.shortest_path_length(main_graph, target=sink_node)
     max_depth = max(shortest_paths_to_sink.values())
+
     for node, depth in shortest_paths_to_sink.items():
-        node_columns[node] = -depth  # Assign columns based on depth, with sink at max_depth
+        if node is not None:
+            node_columns[node] = -int(depth)
 
-    # Place all metric nodes in the last column (column index max_depth + 1)
-    full_graph = graph
-    for node in full_graph.nodes:
-        if node in gr.nodes:
-            continue  # Skip nodes already placed
-        # These are metric nodes, place them in the last column
-        node_columns[node] = 1
+    # Force all source nodes to the far left.
+    source_node_names = pipeline.get_source_node_names()
+    if source_node_names:
+        for source_node in source_node_names:
+            node_columns[source_node] = -int(max_depth) - 1
 
-    # Ensure source is in the left-most column (column index 0)
-    node_columns[source] = -(max_depth + 1)
+    # Place metric nodes in their own column.
+    for node in graph.nodes:
+        if pipeline.internal_config.nodes[node][1].node_type == NodeType.METRIC:
+            node_columns[node] = 1
 
-    # Group nodes by their assigned column
-    columns = {}
+    columns: dict[int, set[str]] = {}
     for node, col in node_columns.items():
         if col is not None:
             columns.setdefault(col, set()).add(node)
 
     return columns
 
-def node_name_to_color_mapping(node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[str, str]:
-    """Create a mapping from node names to colors based on their type."""
-    color_mapping = {}
-    for node_name, (_, node_config) in node_configs.items():
-        if node_config.node_type == NodeType.SOURCE:
-            color_mapping[node_name] = "lightblue"
-        elif node_config.node_type == NodeType.SINK:
-            color_mapping[node_name] = "lightcoral"
-        elif node_config.node_type == NodeType.METRIC:
-            color_mapping[node_name] = "lightgreen"
-        elif node_config.node_type == NodeType.TRANSFORM:
-            color_mapping[node_name] = "orange"
-        elif node_config.node_type == NodeType.MODEL:
-            color_mapping[node_name] = "lightgray"
-        else:
-            color_mapping[node_name] = "white"  # Default color for unknown types
-    return color_mapping
+
+# =============================================================================
+# Node mappings
+# =============================================================================
+
+
+def node_name_to_color_mapping(
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[str, str]:
+    """Map node names to colors based on node type."""
+    type_to_color = {
+        NodeType.SOURCE: "lightblue",
+        NodeType.SINK: "lightcoral",
+        NodeType.METRIC: "lightgreen",
+        NodeType.TRANSFORM: "orange",
+        NodeType.MODEL: "lightgray",
+    }
+    return {
+        node_name: type_to_color.get(node_config.node_type, "white")
+        for node_name, (_, node_config) in node_configs.items()
+    }
+
 
 def chosen_data_from_node(node_config: NodeConfig) -> Any:
-    """Extract the chosen data from a node configuration for display in the visualization."""
-    # This function can be customized based on the specific attributes of your Node objects
-    # For example, you might want to display the node's parameters, output shape, or other relevant information
-    return node_config.model_dump()  # Example: return the node's configuration as a dictionary
+    """Extract the data displayed for a node in hover/tooltip views."""
+    return node_config.model_dump()
 
-def node_name_to_node_data_mapping(node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[str, dict[str, Any]]:
-    """Create a mapping from node names to their instantiated Node objects."""
-    node_mapping = {}
-    for node_name, (_, node_config) in node_configs.items():
-        # Instantiate the node and extract its data
-        node_mapping[node_name] = chosen_data_from_node(node_config)
-    return node_mapping
 
-def node_name_to_marker_style_mapping(node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[str, str]:
-    """Create a mapping from node names to marker styles based on their type."""
-    marker_mapping = {}
-    for node_name, (_, node_config) in node_configs.items():
-        # Instantiate the node
-        if node_config.node_type == NodeType.SOURCE:
-            marker_mapping[node_name] = "p"  # Circle for source nodes
-        elif node_config.node_type == NodeType.SINK:
-            marker_mapping[node_name] = "p"  # Square for sink nodes
-        elif node_config.node_type == NodeType.METRIC:
-            marker_mapping[node_name] = "d"  # Diamond for metric nodes
-        elif node_config.node_type == NodeType.TRANSFORM:
-            marker_mapping[node_name] = "^"  # Triangle for transform nodes
-        elif node_config.node_type == NodeType.MODEL:
-            marker_mapping[node_name] = "o"  # Inverted triangle for model nodes
-        else:
-            marker_mapping[node_name] = "x"  # Cross for unknown types
-    return marker_mapping
+def node_name_to_node_data_mapping(
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[str, dict[str, Any]]:
+    """Map node names to serialized node data."""
+    return {
+        node_name: chosen_data_from_node(node_config)
+        for node_name, (_, node_config) in node_configs.items()
+    }
 
-def node_name_to_hover_text_mapping(node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[str, str]:
-    """Create a mapping from node names to hover text that includes metadata information."""
-    hover_text_mapping = {}
-    dict_mapping = node_name_to_node_data_mapping(node_configs)
-    for node_name, node_data in dict_mapping.items():
-        if isinstance(node_data, dict):
-            meta_dict = node_data
-        else:
-            meta_dict = {"value": str(node_data)}
+
+def node_name_to_marker_style_mapping(
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[str, str]:
+    """Map node names to matplotlib marker styles based on node type."""
+    type_to_marker = {
+        NodeType.SOURCE: "p",
+        NodeType.SINK: "p",
+        NodeType.METRIC: "d",
+        NodeType.TRANSFORM: "^",
+        NodeType.MODEL: "o",
+    }
+    return {
+        node_name: type_to_marker.get(node_config.node_type, "x")
+        for node_name, (_, node_config) in node_configs.items()
+    }
+
+
+def node_name_to_hover_text_mapping(
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[str, str]:
+    """Map node names to plain-text hover content."""
+    hover_text_mapping: dict[str, str] = {}
+    node_data_mapping = node_name_to_node_data_mapping(node_configs)
+
+    for node_name, node_data in node_data_mapping.items():
+        meta_dict = (
+            node_data if isinstance(node_data, dict) else {"value": str(node_data)}
+        )
         lines = [f"node: {node_name}"]
+
         if meta_dict:
-            for k, v in meta_dict.items():
-                lines.append(f"{k}: {v}")
+            for key, value in meta_dict.items():
+                lines.append(f"{key}: {value}")
         else:
             lines.append("(no metadata)")
 
         hover_text_mapping[node_name] = "\n".join(lines)
+
     return hover_text_mapping
 
-def edge_to_linestyle_mapping(edges: list["Edge"], node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[tuple[str, str], str]:
-    """Create a mapping from edges (source, target) to line styles based on the types of the connected nodes."""
-    linestyle_mapping = {}
-    for edge in edges:
-        source, target = edge.source, edge.target
-        source_type = node_configs[source][1].node_type
-        target_type = node_configs[target][1].node_type
-        if source_type == NodeType.SOURCE or target_type == NodeType.SINK:
-            linestyle_mapping[(source, target)] = "-"  # Edges connected to source or sink are solid
-        elif source_type == NodeType.METRIC or target_type == NodeType.METRIC:
-            linestyle_mapping[(source, target)] = "--"
-        else:
-            linestyle_mapping[(source, target)] = "-"  # Other edges are solid
-    return linestyle_mapping
 
-def get_execution_mode(node_config: NodeConfig, port_name: str, source: bool) -> list[str]:
-    """Get the execution mode of a port from the node configuration."""
-    # This function can be customized based on how you define execution modes in your NodeConfig
-    # For example, you might have an attribute in NodeConfig that specifies the execution mode for each port
+# =============================================================================
+# Edge mappings
+# =============================================================================
+
+
+def get_execution_mode(
+    node_config: NodeConfig, port_name: str, source: bool
+) -> list[str]:
+    """Return the execution modes for a port.
+
+    Parameters
+    ----------
+    source:
+        True when reading an input port, False when reading an output port.
+
+    """
     if source:
         return node_config.in_ports[port_name].mode
     return node_config.out_ports[port_name].mode
 
-def edge_to_color_mapping(edges: list["Edge"], node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[tuple[str, str], str]:
-    """Create a mapping from edges to colours based on the execution mode of the connected ports.
 
-    Case :
-    - "all" mode: black line
-    - several but not all modes: blue line
-    - "train" only: green line
-    - "inference" only: orange line
-    - "evaluation" only: purple line
-    """
-    mapping = {}
+def edge_to_linestyle_mapping(
+    edges: list[Edge],
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[tuple[str, str], str]:
+    """Map edges to line styles based on connected node types."""
+    mapping: dict[tuple[str, str], str] = {}
+
     for edge in edges:
-        source, target, ports_map = edge.source, edge.target, edge.ports_map
-        target_port, source_port = list(ports_map.items())[0]
-        source_node_config = node_configs[source][1]
-        target_node_config = node_configs[target][1]
-        source_modes = get_execution_mode(source_node_config, source_port, source=False)
-        target_modes = get_execution_mode(target_node_config, target_port, source=True)
-        # For simplicity, we assume that the execution mode of the edge is determined by the intersection of the modes of the connected ports
-        edge_modes = set(source_modes).intersection(set(target_modes))
-        if "all" in edge_modes:
-            mapping[(source, target)] = "black"
-        elif len(edge_modes) > 1:
-            mapping[(source, target)] = "blue"
-        elif "train" in edge_modes:
-            mapping[(source, target)] = "green"
-        elif "inference" in edge_modes:
-            mapping[(source, target)] = "orange"
-        elif "evaluation" in edge_modes:
-            mapping[(source, target)] = "purple"
+        source_type = node_configs[edge.source][1].node_type
+        target_type = node_configs[edge.target][1].node_type
+
+        if source_type == NodeType.SOURCE or target_type == NodeType.SINK:
+            mapping[(edge.source, edge.target)] = "-"
+        elif source_type == NodeType.METRIC or target_type == NodeType.METRIC:
+            mapping[(edge.source, edge.target)] = "--"
         else:
-            mapping[(source, target)] = "gray"  # Default color for edges with no specific mode
+            mapping[(edge.source, edge.target)] = "-"
+
     return mapping
 
 
-def edge_to_hover_text_mapping(edges: list["Edge"]) -> dict[tuple[str, str], str]:
-    """Create a mapping from edges (source, target) to hover text that includes metadata information."""
-    hover_text_mapping = {}
-    for edge in edges:
-        source, target, mapping = edge.source, edge.target, edge.ports_map
-        edge_info = f"edge: {source} -> {target}\nPorts mapping:\n"
-        for k, v in mapping.items():
-            edge_info += f"  {k}: {v}\n"
-        hover_text_mapping[(source, target)] = edge_info
-    return hover_text_mapping
+def select_edges_to_display(
+    edges: list[Edge],
+    node_configs: dict[str, tuple[str, NodeConfig]],
+    execution_mode: str | None = None,
+) -> list[Edge]:
+    """Return the subset of edges to display.
 
-def edge_labels(edges: list["Edge"]) -> dict[tuple[str, str], str]:
-    """Create a mapping from edges (source, target) to labels for visualization."""
-    label_mapping = {}
-    for edge in edges:
-        source, target = edge.source, edge.target
-        target_port, source_port = list(edge.ports_map.items())[0]
-        label_mapping[(source, target)] = f"{source_port} -> {target_port}"  # No labels for now, but can be customized if needed
-    return label_mapping
+    Parameters
+    ----------
+    execution_mode:
+        - None: display all edges
+        - any mode name: display only edges matching that execution mode
 
-def edge_curved_mapping(edges: list["Edge"], node_configs: dict[str, tuple[type[Node], NodeConfig]]) -> dict[tuple[str, str], bool]:
-    """Create a mapping from edges (source, target) to a boolean indicating whether the edge should be curved or not.
-    
-    If an edge leads to a metric node, it will be curved to visually separate it from the main execution flow.
+    Notes
+    -----
+    This function assumes you already have a helper such as
+    `edge_matches_execution_mode(edge, execution_mode)` available elsewhere.
+
     """
-    curved_mapping = {}
+    if execution_mode is None or execution_mode == NodeExecutionMode.ALL:
+        return edges
+
+    source_configs = {node: config for node, (_, config) in node_configs.items()}
+    target_configs = {node: config for node, (_, config) in node_configs.items()}
+
+    return [
+        edge
+        for edge in edges
+        if edge_matches_execution_mode(
+            edge,
+            execution_mode,
+            source_configs[edge.source],
+            target_configs[edge.target],
+        )
+    ]
+
+
+def edge_matches_execution_mode(
+    edge: Edge,
+    execution_mode: str,
+    source_config: NodeConfig,
+    target_config: NodeConfig,
+) -> bool:
+    """Return True if the edge has at least one port_map matching the given execution mode."""
+    exec_modes = [
+        (
+            source_config.out_ports[source_port].mode,
+            target_config.in_ports[target_port].mode,
+        )
+        for (source_port, target_port) in edge.ports_map
+    ]
+    for source_modes, target_modes in exec_modes:
+        if "all" in source_modes and "all" in target_modes:
+            return True
+        if execution_mode in source_modes or execution_mode in target_modes:
+            return True
+    return False
+
+
+def edge_to_hover_text_mapping(edges: list[Edge]) -> dict[tuple[str, str], str]:
+    """Map edges to plain-text hover content."""
+    mapping: dict[tuple[str, str], str] = {}
+
     for edge in edges:
-        source, target = edge.source, edge.target
-        target_node_config = node_configs[target][1]
-        if target_node_config.node_type == NodeType.METRIC:
-            curved_mapping[(source, target)] = True
-        else:
-            curved_mapping[(source, target)] = False
-    return curved_mapping
+        lines = [f"edge: {edge.source} -> {edge.target}", "Ports mapping:"]
+        lines.extend(
+            f"  {target_port}: {source_port}"
+            for (source_port, target_port) in edge.ports_map
+        )
+        mapping[(edge.source, edge.target)] = "\n".join(lines)
+
+    return mapping
 
 
-def render_pipeline_graph(pipeline: "Pipeline", title="Pipeline Graph", figsize=(12, 6)) -> None:
-    """Render the pipeline graph using iplotx, with nodes arranged in columns based on their type and depth in the graph.
-    Each node's metadata is displayed on hover.
+def edge_curved_mapping(
+    edges: list[Edge],
+    node_configs: dict[str, tuple[str, NodeConfig]],
+) -> dict[tuple[str, str], bool]:
+    """Map edges to whether they should be rendered as curved.
+
+    Edges targeting metric nodes are curved to visually separate them from the
+    main execution flow.
     """
-    graph = pipeline.graph.copy()  # Make a copy of the graph to avoid modifying the original
-    graph = pipeline.graph
-    node_configs = pipeline.config.nodes
-    # Get the column assignments for each node
-    columns = split_execution_graph_into_columns(graph=graph,
-                                                 graph_wo_metrics=pipeline.graph_wo_metrics,
-                                                 source_node=pipeline.get_source_node_name(),
-                                                 sink_node=pipeline.get_sink_node_name())
-    # Get the color mapping for nodes
-    node_color_mapping = node_name_to_color_mapping(node_configs)
-    # Get the marker style mapping for nodes
-    node_marker_mapping = node_name_to_marker_style_mapping(node_configs)
-    # Get the hover text mapping for nodes
-    node_hover_text_mapping = node_name_to_hover_text_mapping(node_configs)
-    # Get the edge color and linestyle mapping
-    edge_color_mapping = edge_to_color_mapping(pipeline.edges, node_configs)
-    edge_linestyle_map = edge_to_linestyle_mapping(pipeline.edges, node_configs)
-    edge_curved_map = edge_curved_mapping(pipeline.edges, node_configs)
-    # Get the hover text mapping for edges
-    edge_hover_text_mapping = edge_to_hover_text_mapping(pipeline.edges)
-    # Get the node labels
-    node_labels = {node: str(node) for node in graph.nodes}
-    edge_lab= edge_labels(pipeline.edges)  # No edge labels for now, but can be customized if needed
-    # Create the iplotx figures
-    pos = nx.multipartite_layout(graph, subset_key=columns)
-    fig, ax = plt.subplots(figsize=figsize)
-    artist = ipx.plot(
-        graph,
-        layout=pos,
-        style={
-            "vertex": {
-                "facecolor": node_color_mapping,
-                "marker": node_marker_mapping,
-                "label": {"verticalalignment": "top", "horizontalalignment": "center", "fontsize": 8, "color": "black"},
-            },
-            "edge": {
-                "color": edge_color_mapping,
-                "linestyle": edge_linestyle_map,
-                "paralleloffset": 0.1,
-                "label": {
-                    "rotate": False,
-                    "fontsize": 5,
-                    "color": "black",
-                },
-                "alpha": 0.8,
-
-            },
-        },
-        node_labels=node_labels,
-        edge_labels=edge_lab,
-        ax=ax
-    )
-    ax.set_title(title)
-    ax.set_axis_off()
-
-    # Add hover tooltips for nodes
-    nodes_in_order = list(graph.nodes)
-    xs = [float(pos[n][0]) for n in nodes_in_order]
-    ys = [float(pos[n][1]) for n in nodes_in_order]
-
-    hover_points = ax.scatter(xs, ys, s=300, alpha=0.0)
-    cursor = mplcursors.cursor(hover_points, hover=2) # Transient hover (disappears when cursor moves away from the points)
-    @cursor.connect("add")
-    def on_add(sel):
-        idx = sel.index
-        node = nodes_in_order[idx]
-        sel.annotation.set_text(node_hover_text_mapping[node])
-        sel.annotation.get_bbox_patch().set(alpha=0.95)
-
-    plt.tight_layout()
-    return fig, ax, artist
+    return {
+        (edge.source, edge.target): node_configs[edge.target][1].node_type
+        == NodeType.METRIC
+        for edge in edges
+    }
 
 
-# TODO : add edge color depending on the execution mode of the connexion, and labels for the nodes without hover, create prettier hovertext
+# =============================================================================
+# Hover HTML helpers for Plotly
+# =============================================================================
+
 
 def _dict_to_hover_html(data: Any, indent: int = 0) -> str:
-    """Format nested dict/list data as HTML for Plotly hover."""
+    """Format nested dict/list data as HTML for Plotly hover content."""
     pad = "&nbsp;" * 4 * indent
 
     if isinstance(data, dict):
-        lines = []
-        for k, v in data.items():
-            key = html.escape(str(k))
-            if isinstance(v, (dict, list, tuple)):
-                lines.append(f"{pad}<b>{key}</b>:")
-                lines.append(_dict_to_hover_html(v, indent + 1))
+        lines: list[str] = []
+        for key, value in data.items():
+            escaped_key = html.escape(str(key))
+            if isinstance(value, (dict, list, tuple)):
+                lines.append(f"{pad}<b>{escaped_key}</b>:")
+                lines.append(_dict_to_hover_html(value, indent + 1))
             else:
-                val = html.escape(str(v))
-                lines.append(f"{pad}<b>{key}</b>: {val}")
+                lines.append(f"{pad}<b>{escaped_key}</b>: {html.escape(str(value))}")
         return "<br>".join(lines)
 
     if isinstance(data, (list, tuple)):
@@ -341,48 +308,26 @@ def _node_hover_html(node_name: str, node_data: Any) -> str:
     return f"{title}<br>{body}" if body else title
 
 
-def _edge_hover_html(source: str, target: str, ports_map: dict[str, str]) -> str:
-    lines = [f"<b>{html.escape(source)} → {html.escape(target)}</b>", "<b>Ports mapping</b>"]
-    for target_port, source_port in ports_map.items():
-        lines.append(
-            f"{html.escape(str(source_port))} → {html.escape(str(target_port))}"
-        )
+def _edge_hover_html(source: str, target: str, ports_map: list[tuple[str, str]]) -> str:
+    lines = [
+        f"<b>{html.escape(source)} → {html.escape(target)}</b>",
+        "<b>Ports mapping</b>",
+    ]
+    lines.extend(
+        f"{html.escape(str(source_port))} → {html.escape(str(target_port))}"
+        for source_port, target_port in ports_map
+    )
     return "<br>".join(lines)
 
 
-import numpy as np
+# =============================================================================
+# Geometry helpers for curved edges
+# =============================================================================
 
 
 def _vertical_center(pos: dict[str, Any]) -> float:
     ys = [float(coords[1]) for coords in pos.values()]
     return (min(ys) + max(ys)) / 2.0
-
-
-def _signed_curvature_from_source_y(
-    source_y: float,
-    y_center: float,
-    min_curvature: float = 0.10,
-    max_curvature: float = 0.45,
-    power: float = 1.2,
-) -> float:
-    """Curvature sign and magnitude based on source node vertical position.
-
-    - Above center  -> positive curvature
-    - Below center  -> negative curvature
-    - Farther from center -> larger absolute curvature
-    """
-    dist = abs(source_y - y_center)
-
-    # Normalize distance to [0, 1], guarding against zero division
-    max_dist = max(abs(y_center - source_y), 1e-12)
-    # This local normalization is not enough by itself, so this helper is mainly
-    # intended to be used through `_edge_curvature(...)` below.
-    scaled = dist / max_dist
-    scaled = min(max(scaled, 0.0), 1.0)
-
-    mag = min_curvature + (max_curvature - min_curvature) * (scaled ** power)
-    sign = 1.0 if source_y >= y_center else -1.0
-    return sign * mag
 
 
 def _edge_curvature(
@@ -393,60 +338,19 @@ def _edge_curvature(
     max_curvature: float = 0.45,
     power: float = 1.2,
 ) -> float:
-    """Compute signed curvature for one edge from the source node position.
+    """Compute signed curvature for a curved edge from source position.
 
-    The farther the source is from the vertical center, the stronger the curvature.
+    Edges above the layout center bend upward, edges below bend downward.
+    The farther the source from the center, the stronger the curvature.
     """
     source_y = float(pos[source][1])
-
     ys = [float(coords[1]) for coords in pos.values()]
-    max_dist = max(max(abs(y - y_center) for y in ys), 1e-12)
+    max_dist = max(*(abs(y - y_center) for y in ys), 1e-12)
 
-    norm_dist = abs(source_y - y_center) / max_dist
-    norm_dist = min(max(norm_dist, 0.0), 1.0)
-
-    mag = min_curvature + (max_curvature - min_curvature) * (norm_dist ** power)
-
-    # Below center => negative curvature
-    # Above center => positive curvature
+    norm_dist = min(max(abs(source_y - y_center) / max_dist, 0.0), 1.0)
+    magnitude = min_curvature + (max_curvature - min_curvature) * (norm_dist**power)
     sign = 1.0 if source_y >= y_center else -1.0
-
-    return sign * mag
-
-def _quadratic_bezier_point_and_tangent(p0, p1, curvature=0.18, t=0.5):
-    x0, y0 = p0
-    x1, y1 = p1
-
-    mx, my = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    dx, dy = x1 - x0, y1 - y0
-
-    # perpendicular direction for control point
-    nx_, ny_ = -dy, dx
-    norm = (nx_**2 + ny_**2) ** 0.5 or 1.0
-    nx_, ny_ = nx_ / norm, ny_ / norm
-
-    dist = (dx**2 + dy**2) ** 0.5
-    cx, cy = mx + curvature * dist * nx_, my + curvature * dist * ny_
-
-    # point on quadratic bezier
-    x = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t**2 * x1
-    y = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t**2 * y1
-
-    # derivative of quadratic bezier
-    tx = 2 * (1 - t) * (cx - x0) + 2 * t * (x1 - cx)
-    ty = 2 * (1 - t) * (cy - y0) + 2 * t * (y1 - cy)
-
-    return (x, y), (tx, ty)
-
-
-def _quadratic_bezier_points(p0, p1, curvature=0.18, steps=80):
-    xs, ys = [], []
-    for i in range(steps + 1):
-        t = i / steps
-        (x, y), _ = _quadratic_bezier_point_and_tangent(p0, p1, curvature=curvature, t=t)
-        xs.append(x)
-        ys.append(y)
-    return xs, ys
+    return sign * magnitude
 
 
 def _quadratic_bezier_control_point(
@@ -454,6 +358,7 @@ def _quadratic_bezier_control_point(
     p1: tuple[float, float],
     curvature: float,
 ) -> tuple[float, float]:
+    """Return the control point for a quadratic Bézier curve."""
     x0, y0 = p0
     x1, y1 = p1
 
@@ -461,23 +366,20 @@ def _quadratic_bezier_control_point(
     dx, dy = x1 - x0, y1 - y0
     dist = math.hypot(dx, dy) or 1.0
 
-    # unit normal
     nx_, ny_ = -dy / dist, dx / dist
-
-    cx = mx + curvature * dist * nx_
-    cy = my + curvature * dist * ny_
-    return cx, cy
+    return mx + curvature * dist * nx_, my + curvature * dist * ny_
 
 
 def _quadratic_bezier_point(
     p0: tuple[float, float],
     p1: tuple[float, float],
-    c: tuple[float, float],
+    control: tuple[float, float],
     t: float,
 ) -> tuple[float, float]:
+    """Evaluate a quadratic Bézier curve at parameter t."""
     x0, y0 = p0
     x1, y1 = p1
-    cx, cy = c
+    cx, cy = control
 
     x = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t**2 * x1
     y = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t**2 * y1
@@ -487,12 +389,13 @@ def _quadratic_bezier_point(
 def _quadratic_bezier_derivative(
     p0: tuple[float, float],
     p1: tuple[float, float],
-    c: tuple[float, float],
+    control: tuple[float, float],
     t: float,
 ) -> tuple[float, float]:
+    """Evaluate the derivative of a quadratic Bézier curve at parameter t."""
     x0, y0 = p0
     x1, y1 = p1
-    cx, cy = c
+    cx, cy = control
 
     dx = 2 * (1 - t) * (cx - x0) + 2 * t * (x1 - cx)
     dy = 2 * (1 - t) * (cy - y0) + 2 * t * (y1 - cy)
@@ -504,48 +407,46 @@ def _quadratic_bezier_polyline(
     p1: tuple[float, float],
     curvature: float,
     steps: int = 200,
-) -> tuple[list[float], list[float], tuple[float, float], np.ndarray]:
-    c = _quadratic_bezier_control_point(p0, p1, curvature)
+) -> tuple[list[float], list[float], tuple[float, float]]:
+    """Sample a quadratic Bézier curve into x/y coordinate lists."""
+    control = _quadratic_bezier_control_point(p0, p1, curvature)
     ts = np.linspace(0.0, 1.0, steps + 1)
 
-    xs = []
-    ys = []
+    xs: list[float] = []
+    ys: list[float] = []
     for t in ts:
-        x, y = _quadratic_bezier_point(p0, p1, c, float(t))
+        x, y = _quadratic_bezier_point(p0, p1, control, float(t))
         xs.append(x)
         ys.append(y)
 
-    pts = np.column_stack([xs, ys])
-    return xs, ys, c, ts
+    return xs, ys, control
 
 
 def _bezier_t_for_arc_fraction(
     p0: tuple[float, float],
     p1: tuple[float, float],
-    c: tuple[float, float],
+    control: tuple[float, float],
     steps: int = 400,
     arc_fraction: float = 0.5,
 ) -> float:
-    """Approximate the parameter t corresponding to a target fraction of arc length.
-    """
+    """Approximate the parameter t corresponding to a target arc-length fraction."""
     ts = np.linspace(0.0, 1.0, steps + 1)
-    pts = np.array([_quadratic_bezier_point(p0, p1, c, float(t)) for t in ts])
+    points = np.array([_quadratic_bezier_point(p0, p1, control, float(t)) for t in ts])
 
-    seg = np.sqrt(np.sum(np.diff(pts, axis=0) ** 2, axis=1))
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
-    total = cum[-1]
+    seg_lengths = np.sqrt(np.sum(np.diff(points, axis=0) ** 2, axis=1))
+    cum_lengths = np.concatenate([[0.0], np.cumsum(seg_lengths)])
+    total = cum_lengths[-1]
 
     if total == 0:
         return 0.5
 
     target = arc_fraction * total
-    idx = int(np.searchsorted(cum, target))
+    idx = int(np.searchsorted(cum_lengths, target))
     idx = max(1, min(idx, len(ts) - 1))
 
-    prev_len = cum[idx - 1]
-    next_len = cum[idx]
+    prev_len = cum_lengths[idx - 1]
+    next_len = cum_lengths[idx]
     alpha = 0.0 if next_len == prev_len else (target - prev_len) / (next_len - prev_len)
-
     return float(ts[idx - 1] + alpha * (ts[idx] - ts[idx - 1]))
 
 
@@ -556,10 +457,8 @@ def _sample_quadratic_bezier_with_exact_label_pose(
     steps: int = 200,
     label_arc_fraction: float = 0.5,
 ) -> tuple[list[float], list[float], float, float, float]:
-    """Sample curve for plotting, but compute label point and angle from the exact
-    quadratic derivative evaluated at the arc-length-based t.
-    """
-    xs, ys, c, _ = _quadratic_bezier_polyline(
+    """Sample a Bézier curve and compute an exact label position and angle."""
+    xs, ys, control = _quadratic_bezier_polyline(
         p0=p0,
         p1=p1,
         curvature=curvature,
@@ -569,17 +468,15 @@ def _sample_quadratic_bezier_with_exact_label_pose(
     t_label = _bezier_t_for_arc_fraction(
         p0=p0,
         p1=p1,
-        c=c,
+        control=control,
         steps=max(400, steps),
         arc_fraction=label_arc_fraction,
     )
 
-    lx, ly = _quadratic_bezier_point(p0, p1, c, t_label)
-    dx, dy = _quadratic_bezier_derivative(p0, p1, c, t_label)
+    lx, ly = _quadratic_bezier_point(p0, p1, control, t_label)
+    dx, dy = _quadratic_bezier_derivative(p0, p1, control, t_label)
 
     angle = math.degrees(math.atan2(dy, dx))
-
-    # keep text upright
     if angle > 90:
         angle -= 180
     elif angle < -90:
@@ -587,125 +484,33 @@ def _sample_quadratic_bezier_with_exact_label_pose(
 
     return xs, ys, lx, ly, angle
 
-def _arc_length_mid_t(xs, ys):
-    pts = np.column_stack([xs, ys])
-    seg = np.sqrt(np.sum(np.diff(pts, axis=0) ** 2, axis=1))
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
-    half = cum[-1] / 2.0
-    idx = int(np.searchsorted(cum, half))
 
-    if idx <= 0:
-        return 0.0
-    if idx >= len(cum):
-        return 1.0
-
-    prev_len = cum[idx - 1]
-    next_len = cum[idx]
-    alpha = 0.0 if next_len == prev_len else (half - prev_len) / (next_len - prev_len)
-
-    # map segment location back to bezier t in [0,1]
-    steps = len(xs) - 1
-    t0 = (idx - 1) / steps
-    t1 = idx / steps
-    return t0 + alpha * (t1 - t0)
+# =============================================================================
+# Plotly rendering helpers
+# =============================================================================
 
 
-def _curve_label_pose_from_points(
-    xs: list[float],
-    ys: list[float],
-    curvature: float,
-    normal_offset: float = 0.035,
-) -> tuple[float, float, float]:
-    """Compute label position/angle directly from the already-sampled curve points.
-
-    This guarantees the label follows the exact rendered curve.
-    """
-    pts = np.column_stack([xs, ys])
-
-    if len(pts) < 2:
-        return xs[0], ys[0], 0.0
-
-    # Arc-length midpoint
-    seg = np.sqrt(np.sum(np.diff(pts, axis=0) ** 2, axis=1))
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
-    half = cum[-1] / 2.0
-    mid_idx = int(np.searchsorted(cum, half))
-    mid_idx = max(1, min(mid_idx, len(xs) - 2))
-
-    # Interpolate midpoint on the segment
-    prev_len = cum[mid_idx - 1]
-    next_len = cum[mid_idx]
-    alpha = 0.0 if next_len == prev_len else (half - prev_len) / (next_len - prev_len)
-
-    x = xs[mid_idx - 1] + alpha * (xs[mid_idx] - xs[mid_idx - 1])
-    y = ys[mid_idx - 1] + alpha * (ys[mid_idx] - ys[mid_idx - 1])
-
-    # Local tangent from neighboring sampled points
-    x0, y0 = xs[mid_idx - 1], ys[mid_idx - 1]
-    x1, y1 = xs[mid_idx + 1], ys[mid_idx + 1]
-    tx, ty = x1 - x0, y1 - y0
-
-    norm = math.hypot(tx, ty) or 1.0
-    tx, ty = tx / norm, ty / norm
-
-    # Normal
-    nx_, ny_ = -ty, tx
-
-    # Put the label on the outside of the bend in a sign-aware way
-    side = -1.0 if curvature > 0 else 1.0
-    x += side * normal_offset * nx_
-    y += side * normal_offset * ny_
-
-    angle = math.degrees(math.atan2(ty, tx))
-
-    # Keep text upright
-    if angle > 90:
-        angle -= 180
-    elif angle < -90:
-        angle += 180
-
-    return x, y, angle
-
-
-def _edge_midpoint_for_label(p0, p1, curved: bool = False, curvature: float = 0.18):
-    if not curved:
-        return (p0[0] + p1[0]) / 2.0, (p0[1] + p1[1]) / 2.0
-    xs, ys = _quadratic_bezier_points(p0, p1, curvature=curvature, steps=24)
-    mid = len(xs) // 2
-    return xs[mid], ys[mid]
-
-
-
-
-def _add_edge_shapes_with_labels(
+def _add_edge_shapes(
     fig: go.Figure,
-    pipeline: "Pipeline",
+    edges: list[Edge],
     pos: dict[str, Any],
     edge_color_mapping: dict[tuple[str, str], str],
-    edge_linestyle_map: dict[tuple[str, str], str],
-    edge_label_map: dict[tuple[str, str], str],
-    edge_curved_map: dict[tuple[str, str], bool],
+    edge_linestyle_mapping: dict[tuple[str, str], str],
+    edge_curved_mapping_: dict[tuple[str, str], bool],
 ) -> None:
-    dash_map = {
-        "-": "solid",
-        "--": "dash",
-        "-.": "dashdot",
-        ":": "dot",
-    }
+    """Add visible straight edge shapes to a Plotly figure.
 
-    for edge in pipeline.edges:
-        source = edge.source
-        target = edge.target
+    Hover is handled separately with transparent scatter traces.
+    """
+    dash_map = {"-": "solid", "--": "dash", "-.": "dashdot", ":": "dot"}
+
+    for edge in edges:
+        source, target = edge.source, edge.target
+        if edge_curved_mapping_.get((source, target), False):
+            continue
 
         x0, y0 = float(pos[source][0]), float(pos[source][1])
         x1, y1 = float(pos[target][0]), float(pos[target][1])
-
-        curved = edge_curved_map.get((source, target), False)
-        label_text = edge_label_map.get((source, target), "")
-
-        # Only straight edges here
-        if curved:
-            continue
 
         fig.add_shape(
             type="line",
@@ -713,92 +518,26 @@ def _add_edge_shapes_with_labels(
             y0=y0,
             x1=x1,
             y1=y1,
-            line=dict(
-                color=edge_color_mapping.get((source, target), "gray"),
-                width=2,
-                dash=dash_map.get(edge_linestyle_map.get((source, target), "-"), "solid"),
-            ),
-            label=dict(
-                text=label_text,
-                textposition="middle",
-                padding=6,
-                font=dict(size=9, color="black"),
-            ),
+            line={
+                "color": edge_color_mapping.get((source, target), "gray"),
+                "width": 2,
+                "dash": dash_map.get(
+                    edge_linestyle_mapping.get((source, target), "-"), "solid"
+                ),
+            },
             layer="below",
         )
 
 
-def _sample_quadratic_bezier_with_label_pose(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    curvature: float,
-    steps: int = 160,
-    label_arc_fraction: float = 0.5,
-) -> tuple[list[float], list[float], float, float, float]:
-    """Build the rendered curve and compute the label position/angle from the same sampled points.
-
-    Returns
-    -------
-    xs, ys, lx, ly, angle_deg
-
-    """
-    x0, y0 = p0
-    x1, y1 = p1
-
-    # Control point from signed perpendicular offset
-    mx, my = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    dx, dy = x1 - x0, y1 - y0
-    dist = math.hypot(dx, dy) or 1.0
-
-    nx_, ny_ = -dy / dist, dx / dist
-    cx = mx + curvature * dist * nx_
-    cy = my + curvature * dist * ny_
-
-    # Sample the exact polyline that will be rendered
-    ts = np.linspace(0.0, 1.0, steps + 1)
-    xs = ((1 - ts) ** 2) * x0 + 2 * (1 - ts) * ts * cx + (ts ** 2) * x1
-    ys = ((1 - ts) ** 2) * y0 + 2 * (1 - ts) * ts * cy + (ts ** 2) * y1
-
-    xs = xs.tolist()
-    ys = ys.tolist()
-
-    # Arc-length parameterization on the sampled polyline
-    pts = np.column_stack([xs, ys])
-    seg = np.sqrt(np.sum(np.diff(pts, axis=0) ** 2, axis=1))
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
-    total = cum[-1] if len(cum) else 0.0
-
-    target = label_arc_fraction * total
-    idx = int(np.searchsorted(cum, target))
-    idx = max(1, min(idx, len(xs) - 2))
-
-    # Interpolate label point on the located segment
-    prev_len = cum[idx - 1]
-    next_len = cum[idx]
-    alpha = 0.0 if next_len == prev_len else (target - prev_len) / (next_len - prev_len)
-
-    lx = xs[idx - 1] + alpha * (xs[idx] - xs[idx - 1])
-    ly = ys[idx - 1] + alpha * (ys[idx] - ys[idx - 1])
-
-    # Tangent from the same sampled polyline
-    tx = xs[idx + 1] - xs[idx - 1]
-    ty = ys[idx + 1] - ys[idx - 1]
-    angle = math.degrees(math.atan2(ty, tx))
-
-    # Keep text upright
-    if angle > 90:
-        angle -= 180
-    elif angle < -90:
-        angle += 180
-
-    return xs, ys, lx, ly, angle
-
-def _add_legend(fig, graph, pipeline, node_configs,
-                node_color_mapping,
-                node_marker_mapping,
-                edge_color_mapping):
-
-    # ---- Node legend (only present types)
+def _add_legend(
+    fig: go.Figure,
+    graph: nx.Graph,
+    node_configs: dict[str, tuple[str, NodeConfig]],
+    node_color_mapping: dict[str, str],
+    node_marker_mapping: dict[str, str],
+    edge_color_mapping: dict[tuple[str, str], str],
+) -> None:
+    """Add node and edge legend entries for the styles present in the graph."""
     marker_symbol_map = {
         "o": "circle",
         "s": "square",
@@ -810,13 +549,11 @@ def _add_legend(fig, graph, pipeline, node_configs,
         "*": "star",
     }
 
-    seen_node_types = {}
-
+    seen_node_types: dict[NodeType, str] = {}
     for node in graph.nodes:
         node_type = node_configs[node][1].node_type
         if node_type in seen_node_types:
             continue
-
         seen_node_types[node_type] = node
 
         fig.add_trace(
@@ -827,16 +564,17 @@ def _add_legend(fig, graph, pipeline, node_configs,
                 marker={
                     "size": 12,
                     "color": node_color_mapping[node],
-                    "symbol": marker_symbol_map.get(node_marker_mapping[node], "circle"),
+                    "symbol": marker_symbol_map.get(
+                        node_marker_mapping[node], "circle"
+                    ),
                     "line": {"color": "black", "width": 1},
                 },
-                name=str(node_type.name),  # cleaner label
+                name=node_type.name,
                 legendgroup="nodes",
                 showlegend=True,
             )
         )
 
-    # ---- Edge legend (only present colors)
     color_to_label = {
         "black": "All modes",
         "blue": "Multiple modes",
@@ -846,9 +584,8 @@ def _add_legend(fig, graph, pipeline, node_configs,
         "gray": "Other",
     }
 
-    seen_colors = set()
-
-    for edge, color in edge_color_mapping.items():
+    seen_colors: set[str] = set()
+    for color in edge_color_mapping.values():
         if color in seen_colors:
             continue
         seen_colors.add(color)
@@ -858,42 +595,74 @@ def _add_legend(fig, graph, pipeline, node_configs,
                 x=[None],
                 y=[None],
                 mode="lines",
-                line=dict(color=color, width=3),
+                line={"color": color, "width": 3},
                 name=color_to_label.get(color, color),
                 legendgroup="edges",
                 showlegend=True,
             )
         )
 
+
+def edge_to_color_mapping(
+    edges: list[Edge],
+    execution_mode: str | None = None,
+) -> dict[tuple[str, str], str]:
+    """Map edges to colors based on execution mode."""
+    if execution_mode is None:
+        execution_mode = str(NodeExecutionMode.ALL)
+    exec_to_color_mapping = {
+        NodeExecutionMode.ALL: "black",
+        NodeExecutionMode.TRAINING: "green",
+        NodeExecutionMode.INFERENCE: "orange",
+        NodeExecutionMode.EVALUATION: "purple",
+    }
+    return {
+        (edge.source, edge.target): exec_to_color_mapping[
+            NodeExecutionMode(execution_mode)
+        ]
+        for edge in edges
+    }
+
+
+def _straight_edge_polyline(
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    steps: int = 100,
+) -> tuple[list[float], list[float]]:
+    """Sample a straight edge into many points for reliable hover along the line."""
+    x0, y0 = p0
+    x1, y1 = p1
+    ts = np.linspace(0.0, 1.0, steps + 1)
+
+    xs = [float((1 - t) * x0 + t * x1) for t in ts]
+    ys = [float((1 - t) * y0 + t * y1) for t in ts]
+    return xs, ys
+
+
+# =============================================================================
+# Plotly rendering
+# =============================================================================
+
+
 def render_pipeline_graph_plotly(
-    pipeline: "Pipeline",
+    pipeline: Pipeline,
     title: str = "Pipeline Graph",
-    version: Version | None = None,
     figsize: tuple[int, int] = (12, 6),
+    execution_mode: str | None = None,
 ) -> go.Figure:
-    if version is None:
-        version = pipeline.config.version
+    """Render the pipeline graph with Plotly and a dropdown to select execution mode."""
+    version = pipeline.version
+
     graph = pipeline.graph
-    node_configs = pipeline.config.nodes
+    node_configs = pipeline.internal_config.nodes
 
-    columns = split_execution_graph_into_columns(
-        graph=graph,
-        graph_wo_metrics=pipeline.graph_wo_metrics,
-        source_node=pipeline.get_source_node_name(),
-        sink_node=pipeline.get_sink_node_name(),
-    )
-
+    columns = split_execution_graph_into_columns(pipeline=pipeline)
     pos = nx.multipartite_layout(graph, subset_key=columns)
     y_center = _vertical_center(pos)
 
     node_color_mapping = node_name_to_color_mapping(node_configs)
     node_marker_mapping = node_name_to_marker_style_mapping(node_configs)
     node_data_mapping = node_name_to_node_data_mapping(node_configs)
-
-    edge_color_mapping = edge_to_color_mapping(pipeline.edges, node_configs)
-    edge_linestyle_map = edge_to_linestyle_mapping(pipeline.edges, node_configs)
-    edge_curved_map = edge_curved_mapping(pipeline.edges, node_configs)
-    edge_label_map = edge_labels(pipeline.edges)
 
     marker_symbol_map = {
         "o": "circle",
@@ -905,46 +674,66 @@ def render_pipeline_graph_plotly(
         "x": "x",
         "*": "star",
     }
+    dash_map = {"-": "solid", "--": "dash", "-.": "dashdot", ":": "dot"}
 
     fig = go.Figure()
 
-    # Hoverable edge traces only where needed:
-    # - all curved edges
-    # - optionally all edges if you want hover everywhere
-    dash_map = {
-        "-": "solid",
-        "--": "dash",
-        "-.": "dashdot",
-        ":": "dot",
-    }
+    # -------------------------------------------------------------------------
+    # Build edge traces for each execution mode
+    # -------------------------------------------------------------------------
+    mode_order = [
+        str(NodeExecutionMode.ALL),
+        str(NodeExecutionMode.TRAINING),
+        str(NodeExecutionMode.INFERENCE),
+        str(NodeExecutionMode.EVALUATION),
+    ]
 
-    for edge in pipeline.edges:
-        source = edge.source
-        target = edge.target
-        ports_map = edge.ports_map
+    if execution_mode is None:
+        initial_mode = str(NodeExecutionMode.ALL)
+    else:
+        initial_mode = str(NodeExecutionMode(execution_mode))
 
-        x0, y0 = float(pos[source][0]), float(pos[source][1])
-        x1, y1 = float(pos[target][0]), float(pos[target][1])
+    edge_trace_indices_by_mode: dict[str, list[int]] = {mode: [] for mode in mode_order}
 
-        curved = edge_curved_map.get((source, target), False)
+    for mode in mode_order:
+        visible_edges = select_edges_to_display(
+            pipeline.edges,
+            execution_mode=mode,
+            node_configs=node_configs,
+        )
+        edge_color_mapping = edge_to_color_mapping(visible_edges, mode)
+        edge_linestyle_mapping = edge_to_linestyle_mapping(visible_edges, node_configs)
+        edge_curved_mapping_ = edge_curved_mapping(visible_edges, node_configs)
 
-        if curved:
-            curvature = _edge_curvature(
-                source=source,
-                pos=pos,
-                y_center=y_center,
-                min_curvature=0.10,
-                max_curvature=0.45,
-                power=1.2,
-            )
+        for edge in visible_edges:
+            source, target = edge.source, edge.target
+            x0, y0 = float(pos[source][0]), float(pos[source][1])
+            x1, y1 = float(pos[target][0]), float(pos[target][1])
+            curved = edge_curved_mapping_.get((source, target), False)
 
-            xs, ys, lx, ly, angle = _sample_quadratic_bezier_with_exact_label_pose(
-                (x0, y0),
-                (x1, y1),
-                curvature=curvature,
-                steps=200,
-                label_arc_fraction=0.5,
-            )
+            if curved:
+                curvature = _edge_curvature(
+                    source=source,
+                    pos=pos,
+                    y_center=y_center,
+                    min_curvature=0.10,
+                    max_curvature=0.45,
+                    power=1.2,
+                )
+
+                xs, ys, _, _, _ = _sample_quadratic_bezier_with_exact_label_pose(
+                    (x0, y0),
+                    (x1, y1),
+                    curvature=curvature,
+                    steps=200,
+                    label_arc_fraction=0.5,
+                )
+            else:
+                xs, ys = _straight_edge_polyline(
+                    (x0, y0),
+                    (x1, y1),
+                    steps=100,
+                )
 
             fig.add_trace(
                 go.Scatter(
@@ -954,66 +743,41 @@ def render_pipeline_graph_plotly(
                     line={
                         "color": edge_color_mapping.get((source, target), "gray"),
                         "width": 2,
-                        "dash": dash_map.get(edge_linestyle_map.get((source, target), "-"), "solid"),
+                        "dash": dash_map.get(
+                            edge_linestyle_mapping.get((source, target), "-"),
+                            "solid",
+                        ),
                     },
-                    hovertemplate=_edge_hover_html(source, target, edge.ports_map) + "<extra></extra>",
+                    hovertemplate=_edge_hover_html(source, target, edge.ports_map)
+                    + "<extra></extra>",
                     showlegend=False,
+                    visible=(mode == initial_mode),
                 )
             )
+            edge_trace_indices_by_mode[mode].append(len(fig.data) - 1)
 
-            fig.add_annotation(
-                x=lx,
-                y=ly,
-                text=edge_label_map.get((source, target), ""),
-                showarrow=False,
-                textangle=angle,
-                font={"size": 9, "color": "black"},
-                xanchor="center",
-                yanchor="middle",
-                bgcolor="rgba(255,255,255,0.0)",
-                borderpad=0,
-            )
-        else:
-            # invisible hover trace for straight edge
-            fig.add_trace(
-                go.Scatter(
-                    x=[x0, x1],
-                    y=[y0, y1],
-                    mode="lines",
-                    line={
-                        "color": "rgba(0,0,0,0)",
-                        "width": 10,
-                    },
-                    hovertemplate=_edge_hover_html(source, target, ports_map) + "<extra></extra>",
-                    showlegend=False,
-                )
-            )
-
-    # Visible edge lines + tangent labels
-    _add_edge_shapes_with_labels(
-        fig=fig,
-        pipeline=pipeline,
-        pos=pos,
-        edge_color_mapping=edge_color_mapping,
-        edge_linestyle_map=edge_linestyle_map,
-        edge_label_map=edge_label_map,
-        edge_curved_map=edge_curved_map,
-    )
-
-    # Nodes
+    # -------------------------------------------------------------------------
+    # Node trace
+    # -------------------------------------------------------------------------
     nodes_in_order = list(graph.nodes)
-    node_x = [float(pos[n][0]) for n in nodes_in_order]
-    node_y = [float(pos[n][1]) for n in nodes_in_order]
-    node_hover = [_node_hover_html(n, node_data_mapping.get(n, {})) for n in nodes_in_order]
-    node_symbols = [marker_symbol_map.get(node_marker_mapping.get(n, "o"), "circle") for n in nodes_in_order]
-    node_colors = [node_color_mapping.get(n, "white") for n in nodes_in_order]
+    node_x = [float(pos[node][0]) for node in nodes_in_order]
+    node_y = [float(pos[node][1]) for node in nodes_in_order]
+    node_hover = [
+        _node_hover_html(node, node_data_mapping.get(node, {}))
+        for node in nodes_in_order
+    ]
+    node_symbols = [
+        marker_symbol_map.get(node_marker_mapping.get(node, "o"), "circle")
+        for node in nodes_in_order
+    ]
+    node_colors = [node_color_mapping.get(node, "white") for node in nodes_in_order]
 
     fig.add_trace(
         go.Scatter(
             x=node_x,
             y=node_y,
             mode="markers+text",
-            text=[str(n) for n in nodes_in_order],
+            text=[str(node) for node in nodes_in_order],
             textposition="top center",
             hovertemplate="%{customdata}<extra></extra>",
             customdata=node_hover,
@@ -1025,17 +789,139 @@ def render_pipeline_graph_plotly(
             },
             textfont={"size": 11, "color": "black"},
             showlegend=False,
+            visible=True,
         )
     )
+    node_trace_index = len(fig.data) - 1
+
+    # -------------------------------------------------------------------------
+    # Legend entries
+    # Keep them always visible
+    # -------------------------------------------------------------------------
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker={"size": 0},
+            name="— Nodes —",
+            showlegend=True,
+            visible=True,
+        )
+    )
+    separator_trace_index = len(fig.data) - 1
+
+    # Node legend
+    seen_node_types: dict[NodeType, str] = {}
+    node_legend_trace_indices: list[int] = []
+
+    for node in graph.nodes:
+        node_type = node_configs[node][1].node_type
+        if node_type in seen_node_types:
+            continue
+        seen_node_types[node_type] = node
+
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                marker={
+                    "size": 12,
+                    "color": node_color_mapping[node],
+                    "symbol": marker_symbol_map.get(
+                        node_marker_mapping[node], "circle"
+                    ),
+                    "line": {"color": "black", "width": 1},
+                },
+                name=node_type.name,
+                legendgroup="nodes",
+                showlegend=True,
+                visible=True,
+            )
+        )
+        node_legend_trace_indices.append(len(fig.data) - 1)
+
+    # Edge legend
+    color_to_label = {
+        "black": "All modes",
+        "green": "Training",
+        "orange": "Inference",
+        "purple": "Evaluation",
+        "gray": "Other",
+    }
+
+    edge_legend_trace_indices: list[int] = []
+    for color in ["black", "green", "orange", "purple"]:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                line={"color": color, "width": 3},
+                name=color_to_label[color],
+                legendgroup="edges",
+                showlegend=True,
+                visible=True,
+            )
+        )
+        edge_legend_trace_indices.append(len(fig.data) - 1)
+
+    # -------------------------------------------------------------------------
+    # Dropdown visibility masks
+    # -------------------------------------------------------------------------
+    always_visible = {
+        node_trace_index,
+        separator_trace_index,
+        *node_legend_trace_indices,
+        *edge_legend_trace_indices,
+    }
+
+    buttons = []
+    total_traces = len(fig.data)
+
+    for mode in mode_order:
+        visible_mask = [False] * total_traces
+
+        for idx in always_visible:
+            visible_mask[idx] = True
+
+        for idx in edge_trace_indices_by_mode[mode]:
+            visible_mask[idx] = True
+
+        label = mode.capitalize()
+
+        buttons.append(
+            {
+                "label": label,
+                "method": "update",
+                "args": [
+                    {"visible": visible_mask},
+                    {
+                        "title": {
+                            "text": (
+                                f"{title} — {label}"
+                                f"<br><span style='font-size:12px;color:gray'>{version!s}</span>"
+                            ),
+                            "x": 0.5,
+                            "xanchor": "center",
+                        }
+                    },
+                ],
+            }
+        )
 
     width = int(figsize[0] * 100)
     height = int(figsize[1] * 100)
 
     fig.update_layout(
         title={
-            "text": f"{title}<br><span style='font-size:12px;color:gray'>{version!s}</span>",
+            "text": (
+                f"{title} — {initial_mode.capitalize()}"
+                f"<br><span style='font-size:12px;color:gray'>{version!s}</span>"
+            ),
             "x": 0.5,
-            "xanchor": "center"
+            "xanchor": "center",
         },
         width=width,
         height=height,
@@ -1046,7 +932,7 @@ def render_pipeline_graph_plotly(
             "font": {"color": "white", "size": 12},
             "align": "left",
         },
-        margin={"l": 20, "r": 20, "t": 50, "b": 20},
+        margin={"l": 20, "r": 20, "t": 80, "b": 20},
         xaxis={"visible": False},
         yaxis={"visible": False, "scaleanchor": "x", "scaleratio": 1},
         legend={
@@ -1058,24 +944,18 @@ def render_pipeline_graph_plotly(
             "yanchor": "top",
             "bordercolor": "rgba(0,0,0,0.1)",
             "borderwidth": 1,
-        }
-    )
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode="markers",
-        marker=dict(size=0),
-        name="— Nodes —",
-        showlegend=True
-    ))
-
-    _add_legend(
-        fig=fig,
-        graph=graph,
-        pipeline=pipeline,
-        node_configs=node_configs,
-        node_color_mapping=node_color_mapping,
-        node_marker_mapping=node_marker_mapping,
-        edge_color_mapping=edge_color_mapping,
+        },
+        updatemenus=[
+            {
+                "buttons": buttons,
+                "direction": "down",
+                "showactive": True,
+                "x": 0.01,
+                "xanchor": "left",
+                "y": 1.12,
+                "yanchor": "top",
+            }
+        ],
     )
 
     return fig
