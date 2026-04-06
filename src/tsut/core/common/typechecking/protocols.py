@@ -12,6 +12,8 @@ class HasHyperparametersConfig(Protocol):
 
     hyperparameters: BaseModel
 
+    def model_copy(self, update: dict[str, Any]) -> BaseModel: ...
+
 
 class HasHyperparametersNode(Protocol):
     """Protocol for nodes that have hyperparameters in their configuration."""
