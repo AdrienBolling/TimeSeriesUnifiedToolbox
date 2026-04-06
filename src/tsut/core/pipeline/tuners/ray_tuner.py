@@ -9,7 +9,11 @@ from ray import tune
 from ray.tune import RunConfig, TuneConfig
 
 from tsut.core.common.data.data import TabularData
-from tsut.core.pipeline.pipeline_old import Pipeline, PipelineConfig
+from tsut.core.common.typechecking.typeguards import (
+    has_hyperparameter_space,
+    has_hyperparameters_config,
+)
+from tsut.core.pipeline.pipeline import Pipeline, PipelineConfig
 from tsut.core.pipeline.runners.smart_runner import (
     SmartRunnerConfig,
     TabularSmartRunner,
@@ -31,7 +35,16 @@ class RayPipelineTuner:
         self._config = config
         self._results_grid = None
 
+        # Dummy Pipeline, for validation and node objects instantiation.
+        self._dummy_pipe = Pipeline(config=self._pipeline_config)
+        self._dummy_pipe.compile()
+
     # --- Public API ---
+
+    @property
+    def tuner(self) -> tune.Tuner | None:
+        """Get the Ray Tune Tuner object after tuning has been run."""
+        return self._tuner
 
     def default_hyperparameter_space(self) -> dict[str, Any]:
         """Get the default hyperparameter space for tuning.
@@ -40,9 +53,9 @@ class RayPipelineTuner:
         The user can then modify this default hyperparameter space according to their needs before passing it to the "tune" method.
         """
         hp_space = {}
-        for node_name, node_conf in self._pipeline_config.nodes.items():
-            if node_conf[1].hyperparameters is not None:  # type: ignore
-                for hp_name, hp_value in node_conf[1].hyperparameters.items():  # type:ignore idk why typechecker doesn't work here
+        for node_name, node_obj in self._dummy_pipe.node_objects.items():
+            if has_hyperparameter_space(node_obj):
+                for hp_name, hp_value in node_obj.hyperparameter_space.items():
                     hp_space[f"{node_name}/{hp_name}"] = hp_value
         return hp_space
 
@@ -75,6 +88,14 @@ class RayPipelineTuner:
         self._tuner = tuner
         tuner.fit()
 
+    def get_best(self, metric: str | None = None, mode: str = "max") -> dict[str, Any]:
+        """Get the best hyperparameters found during tuning."""
+        if self._tuner is None:
+            msg = "Tuning has not been run yet. Please run the tune() method first."
+            raise ValueError(msg)
+        best_result = self._tuner.get_best_result(metric=metric, mode=mode)
+        return best_result
+
     # --- Internal methods ---
 
     def _trainable(
@@ -87,11 +108,10 @@ class RayPipelineTuner:
         if metric_aggregator is not None:
             fn = metric_aggregator
         elif optimization_metric is not None:
-            fn = lambda metrics: metrics[optimization_metric]
+            fn = lambda metrics: metrics[optimization_metric]  # noqa: E731
         else:
-            raise ValueError(
-                "Either optimization_metric or metric_aggregator must be provided. In the event both are provided, the metric_aggregator will be used."
-            )
+            msg = "Either optimization_metric or metric_aggregator must be provided. In the event both are provided, the metric_aggregator will be used."
+            raise ValueError(msg)
 
         def trainable(config: dict) -> None:
             # Set the parameters of the underlying pipeline runner according to the config provided by Ray Tune.
@@ -142,9 +162,9 @@ class RayPipelineTuner:
         # We know that the config dict provided by Ray Tune will be a flat dict where the keys are the hyperparameters. We need to convert it to a PipelineConfig ourselves.
         # To build this hyperparameter_space, the user will have used self.default_hyperparameter_space() and then modified it according to their needs.
         # this default hp_dict is formated as follows :
-        # {"node_name/hp_name": tune_compatible_definition}
+        # {"node_name/hp_name": tune_compatible_definition}  # noqa: ERA001
         # So what we will receive in the "config" argument will be :
-        # {"node_name/hp_name": value}
+        # {"node_name/hp_name": value}  # noqa: ERA001
 
         config_dict = {}
         for key, value in config.items():
@@ -154,9 +174,18 @@ class RayPipelineTuner:
             config_dict[node_name][hp_name] = value
 
         pipe_conf = self._pipeline_config.model_copy()
+        dummy_pipe = Pipeline(
+            config=pipe_conf
+        )  # We create a dummy pipeline to benefit from the config validation logic.
         for node_name, hp_dict in config_dict.items():
             for hp_name, hp_value in hp_dict.items():
-                pipe_conf.nodes[node_name][1].hyperparameters[hp_name] = (  # type: ignore
-                    hp_value  # not a true error since only nodes with hyperparameters will be called here
-                )
+                conf = dummy_pipe.internal_config.nodes[node_name][1]
+                if has_hyperparameters_config(conf):
+                    conf.model_copy(
+                        update={
+                            "hyperparameters": conf.hyperparameters.model_copy(
+                                update={hp_name: hp_value}
+                            )
+                        }
+                    )
         return pipe_conf

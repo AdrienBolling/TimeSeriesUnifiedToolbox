@@ -3,8 +3,10 @@
 TSUT Pipelines are akin to graphs. The nodes are the components of the pipeline (Models, Data sources, Transforms, etc.), and edges represent the data flow between these nodes.
 """
 
+import json
 from collections.abc import Callable, Mapping
 from functools import wraps
+from pathlib import Path
 from typing import Any
 
 import networkx as nx
@@ -379,6 +381,20 @@ class Pipeline:
                 message = f"Node '{node_name}' does not have parameters. Cannot set parameters for node that does not have parameters."
                 raise ValueError(message)
             node_object.set_params(node_params)
+
+    def save_params_to_dir(self, dir_path: str) -> None:
+        """Save the parameters of all nodes in the pipeline to a directory."""
+        params = self.get_params()
+        file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
+        with Path(file_name).open("w") as f:
+            json.dump(params, f)
+
+    def load_params_from_dir(self, dir_path: str) -> None:
+        """Load the parameters of all nodes in the pipeline from a directory."""
+        file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
+        with Path(file_name).open("r") as f:
+            params = json.load(f)
+        self.set_params(params)
 
     #### Internal methods ####
     # --- Internal methods for pipeline management ---

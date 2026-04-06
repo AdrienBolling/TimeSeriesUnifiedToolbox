@@ -67,6 +67,14 @@ class PipelineRunner(ABC):
         """Set the parameters of all nodes in the pipeline."""
         self._pipeline.set_params(params=params)
 
+    def save_params_to_dir(self, dir_path: str) -> None:
+        """Save the parameters of all nodes in the pipeline to a directory."""
+        self._pipeline.save_params_to_dir(dir_path=dir_path)
+
+    def load_params_from_dir(self, dir_path: str) -> None:
+        """Load the parameters of all nodes in the pipeline from a directory."""
+        self._pipeline.load_params_from_dir(dir_path=dir_path)
+
     # --- API to implement for any PipelineRunner implementation ---
     # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself.
     # We will see where it belongs on the long run.
