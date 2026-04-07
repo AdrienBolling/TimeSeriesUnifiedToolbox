@@ -34,6 +34,11 @@ dev = [
     "ruff>=0.14.2",
     "ty>=0.0.1a24",
 ]
+docs = [
+    "sphinx>=8.0",
+    "sphinx-rtd-theme>=3.0",
+    "sphinx-autodoc-typehints>=2.0",
+]
 
 [tool.ruff.lint]
 select = [

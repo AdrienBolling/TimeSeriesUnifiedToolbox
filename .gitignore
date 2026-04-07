@@ -26,3 +26,6 @@ wheels/
 
 # Jupyter Notebook tests
 ipynb/
+
+# Sphinx build output
+docs/_build/
