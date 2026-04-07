@@ -39,8 +39,8 @@ class TransformConfig[H, R](NodeConfig):
     """Base metadata configuration for all Transform nodes in the TSUT Framework."""
 
     node_type: NodeType = NodeType.TRANSFORM
-    hyperparameters: H | None = None
-    running_config: R | None = None
+    hyperparameters: H
+    running_config: R
 
 
 class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC):
@@ -65,16 +65,6 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
         """Apply the transform to the given data."""
-        ...
-
-    @abstractmethod
-    def get_params(self) -> P:
-        """Get the current parameters of the transform."""
-        ...
-
-    @abstractmethod
-    def set_params(self, params: P) -> None:
-        """Set the parameters of the transform."""
         ...
 
     # --- API convenience ---

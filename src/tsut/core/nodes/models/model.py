@@ -44,8 +44,8 @@ class ModelConfig[H, R](NodeConfig):
     """Base configuration for all Models in the TSUT Framework."""
 
     node_type: NodeType = NodeType.MODEL
-    hyperparameters: H | None = None
-    running_config: R | None = None
+    hyperparameters: H
+    running_config: R
 
 
 class Model[D_I, D_C_I, D_O, D_C_O, P](

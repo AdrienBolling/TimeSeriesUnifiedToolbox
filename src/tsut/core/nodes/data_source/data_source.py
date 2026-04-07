@@ -30,7 +30,7 @@ class DataSourceConfig[R](NodeConfig):
     running_config: R | None = None
 
 
-class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
+class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
     """Base class for all data source nodes in the TSUT Framework."""
 
     metadata = DataSourceMetadata()
@@ -45,7 +45,9 @@ class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
         ...
 
     @abstractmethod
-    def fetch_data(self) -> dict[str, tuple[D_O, D_C_O]]:
+    def fetch_data(
+        self, data: dict[str, tuple[D_I, D_C_I]]
+    ) -> dict[str, tuple[D_O, D_C_O]]:
         """Fetch data from the source.
 
         Returns:
@@ -56,7 +58,7 @@ class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
 
     # --- Node API implementation --- Don't touch these unless you know what you're doing ---
 
-    def node_fit(self, data: dict[str, tuple[None, None]]) -> None:
+    def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
         """Fit the data source node with the given data.
 
         Args:
@@ -67,7 +69,7 @@ class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
         self.setup_source()
 
     def node_transform(
-        self, data: dict[str, tuple[None, None]]
+        self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
         """Transform data through the Node by fetching data.
 
@@ -78,8 +80,7 @@ class DataSourceNode[D_O, D_C_O](Node[None, None, D_O, D_C_O], ABC):
             Fetched data
 
         """
-        _ = data  # Unused for data sources
-        return self.fetch_data()
+        return self.fetch_data(data)
 
     # --- API convenience ---
 

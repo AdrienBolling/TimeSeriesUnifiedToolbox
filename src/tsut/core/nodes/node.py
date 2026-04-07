@@ -42,6 +42,7 @@ class Port(BaseModel):
     )
     data_category: DataCategoryEnum  # The category of data that this port accepts or outputs, e.g. "numerical", "categorical", "mixed", etc.
     data_shape: str  # the shape of the data that this ports accepts or outputs for jaxtyping checking. Find the convention for the data shape string at https://docs.kidger.site/jaxtyping/api/array/#shape
+    optional: bool = False  # Whether this port is optional or not. Optional ports can be left unconnected in the pipeline, and the node should be able to handle that case gracefully (e.g., by using default values or by skipping certain computations).
     desc: str
     mode: list[str] = ["all"]
 
@@ -49,7 +50,7 @@ class Port(BaseModel):
 class NodeConfig(BaseModel):
     """Configuration for a Node in a TSUT Pipeline."""
 
-    _id: uuid.UUID = PrivateAttr(uuid.uuid4())
+    _id: uuid.UUID = PrivateAttr(default_factory=uuid.uuid4)
     node_type: NodeType = NodeType.BASE
     in_ports: dict[str, Port] = {}
     out_ports: dict[str, Port] = {}

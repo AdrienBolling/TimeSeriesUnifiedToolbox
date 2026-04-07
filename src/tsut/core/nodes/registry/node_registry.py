@@ -12,6 +12,15 @@ class NodeRegistry(Registry):
     This registry allows for registering and retrieving nodes by name, as well as listing all registered nodes.
     """
 
+    _column_order: list[str] = [
+        "name",
+        "node_type",
+        "node_class",
+        "node_config_class",
+        "running_config",
+        "hyperparameters",
+    ]
+
     def __init__(self) -> None:
         super().__init__(entity="node")
 
@@ -26,21 +35,25 @@ class NodeRegistry(Registry):
         """Register a node in the registry.
 
         Args:
-            name (str): The name of the node to register.
-            node_class (type): The class of the node to register.
-            node_config_class (type): The class of the node's configuration to register.
-            running_config_class (type): The class of the node's running configuration to register.
-            hyperparameters_class (type): The class of the node's hyperparameters to register.
+            name: The name of the node to register.
+            node_class: The class of the node to register.
+            node_config_class: The class of the node's configuration to register.
+            running_config_class: The class of the node's running configuration to register.
+            hyperparameters_class: The class of the node's hyperparameters to register.
 
         """
+        # Extract node_type from the config class defaults.
+        node_type = str(node_config_class().node_type)
+
         self._register(
             name=name,
             class_callable=node_class,
             config_class_callable=node_config_class,
-            extra_fields={
+            node_type=node_type,
+            running_config=running_config_class,
+            hyperparameters=hyperparameters_class,
+            metadata={
                 **node_class.metadata.model_dump(),
-                "running_config_class": running_config_class,
-                "hyperparameters_class": hyperparameters_class,
             },
         )
 
@@ -48,10 +61,10 @@ class NodeRegistry(Registry):
         """Get the configuration class for a registered node.
 
         Args:
-            name (str): The name of the node to get the configuration class for.
+            name: The name of the node to get the configuration class for.
 
         Returns:
-            type: The configuration class for the registered node.
+            The configuration class for the registered node.
 
         """
         return self._registry[name]["node_config_class"]
@@ -60,10 +73,10 @@ class NodeRegistry(Registry):
         """Get the class for a registered node.
 
         Args:
-            name (str): The name of the node to get the class for.
+            name: The name of the node to get the class for.
 
         Returns:
-            type: The class for the registered node.
+            The class for the registered node.
 
         """
         return self._registry[name]["node_class"]
