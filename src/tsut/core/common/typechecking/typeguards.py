@@ -3,6 +3,7 @@ from typing import TypeGuard
 from pydantic import BaseModel
 
 from tsut.core.common.typechecking.protocols import (
+    AcceptsInputsSourceNode,
     HasHyperparametersConfig,
     HasHyperparametersNode,
     HasHyperparameterSpace,
@@ -101,3 +102,11 @@ def is_sink_node(obj: Node) -> TypeGuard[Sink]:
 def is_list(obj: object) -> TypeGuard[list]:
     """Typeguard to check if an object is a list."""
     return isinstance(obj, list)
+
+
+# accepts inputs typeguard
+def accepts_inputs_source_node(node: Node) -> TypeGuard[AcceptsInputsSourceNode]:
+    """Typeguard to check if a Node accepts inputs (i.e., is not a pure data source)."""
+    if hasattr(node, "accepts_inputs") and node.config.node_type == "SOURCE":
+        return node.accepts_inputs  # type: ignore
+    return False

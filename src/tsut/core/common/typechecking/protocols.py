@@ -55,3 +55,8 @@ class HasHyperparameterSpace(Protocol):
 
 
 # --------------
+# accepts_inputs Protocols
+class AcceptsInputsSourceNode(Protocol):
+    """Protocol for source nodes that have an 'accepts_inputs' attribute to indicate whether they can accept inputs from other nodes (i.e., are not pure data sources)."""
+
+    accepts_inputs: bool
