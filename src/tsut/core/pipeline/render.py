@@ -1,3 +1,5 @@
+"""Rendering utilities for TSUT pipeline graphs."""
+
 from __future__ import annotations
 
 import html
@@ -25,8 +27,20 @@ def split_execution_graph_into_columns(
 ) -> dict[int, set[str]]:
     """Group nodes into layout columns for visualization.
 
-    The main execution graph is laid out from left to right using shortest-path
-    distance to the sink node. Metric nodes are forced into a dedicated column.
+    The main execution graph is laid out from left to right using
+    shortest-path distance to the sink node.  Source nodes are forced to
+    the leftmost column and metric nodes into their own column on the
+    right.
+
+    Args:
+        pipeline: Compiled pipeline whose graph will be partitioned.
+
+    Returns:
+        Dict mapping column indices to sets of node names.
+
+    Raises:
+        ValueError: If the pipeline has no sink node.
+
     """
     graph = pipeline.graph
     main_graph = pipeline.graph_wo_metrics
@@ -69,7 +83,15 @@ def split_execution_graph_into_columns(
 def node_name_to_color_mapping(
     node_configs: dict[str, tuple[str, NodeConfig]],
 ) -> dict[str, str]:
-    """Map node names to colors based on node type."""
+    """Map node names to colors based on node type.
+
+    Args:
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping node names to CSS color strings.
+
+    """
     type_to_color = {
         NodeType.SOURCE: "lightblue",
         NodeType.SINK: "lightcoral",
@@ -84,14 +106,30 @@ def node_name_to_color_mapping(
 
 
 def chosen_data_from_node(node_config: NodeConfig) -> Any:
-    """Extract the data displayed for a node in hover/tooltip views."""
+    """Extract the data displayed for a node in hover/tooltip views.
+
+    Args:
+        node_config: Configuration of the node.
+
+    Returns:
+        Serialized dict of the node configuration.
+
+    """
     return node_config.model_dump()
 
 
 def node_name_to_node_data_mapping(
     node_configs: dict[str, tuple[str, NodeConfig]],
 ) -> dict[str, dict[str, Any]]:
-    """Map node names to serialized node data."""
+    """Map node names to serialized node data for tooltips.
+
+    Args:
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping node names to their serialized config dicts.
+
+    """
     return {
         node_name: chosen_data_from_node(node_config)
         for node_name, (_, node_config) in node_configs.items()
@@ -101,7 +139,15 @@ def node_name_to_node_data_mapping(
 def node_name_to_marker_style_mapping(
     node_configs: dict[str, tuple[str, NodeConfig]],
 ) -> dict[str, str]:
-    """Map node names to matplotlib marker styles based on node type."""
+    """Map node names to matplotlib marker styles based on node type.
+
+    Args:
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping node names to matplotlib marker character codes.
+
+    """
     type_to_marker = {
         NodeType.SOURCE: "p",
         NodeType.SINK: "p",
@@ -118,7 +164,15 @@ def node_name_to_marker_style_mapping(
 def node_name_to_hover_text_mapping(
     node_configs: dict[str, tuple[str, NodeConfig]],
 ) -> dict[str, str]:
-    """Map node names to plain-text hover content."""
+    """Map node names to plain-text hover content.
+
+    Args:
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping node names to multi-line hover strings.
+
+    """
     hover_text_mapping: dict[str, str] = {}
     node_data_mapping = node_name_to_node_data_mapping(node_configs)
 
@@ -149,10 +203,13 @@ def get_execution_mode(
 ) -> list[str]:
     """Return the execution modes for a port.
 
-    Parameters
-    ----------
-    source:
-        True when reading an input port, False when reading an output port.
+    Args:
+        node_config: Configuration of the node owning the port.
+        port_name: Name of the port to query.
+        source: ``True`` to read an input port, ``False`` for an output port.
+
+    Returns:
+        List of execution mode strings for the port.
 
     """
     if source:
@@ -164,7 +221,16 @@ def edge_to_linestyle_mapping(
     edges: list[Edge],
     node_configs: dict[str, tuple[str, NodeConfig]],
 ) -> dict[tuple[str, str], str]:
-    """Map edges to line styles based on connected node types."""
+    """Map edges to line styles based on connected node types.
+
+    Args:
+        edges: List of pipeline edges.
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping ``(source, target)`` to matplotlib line-style strings.
+
+    """
     mapping: dict[tuple[str, str], str] = {}
 
     for edge in edges:
@@ -186,18 +252,20 @@ def select_edges_to_display(
     node_configs: dict[str, tuple[str, NodeConfig]],
     execution_mode: str | None = None,
 ) -> list[Edge]:
-    """Return the subset of edges to display.
+    """Return the subset of edges to display for a given execution mode.
 
-    Parameters
-    ----------
-    execution_mode:
-        - None: display all edges
-        - any mode name: display only edges matching that execution mode
+    Args:
+        edges: All edges in the pipeline.
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+        execution_mode: ``None`` to display all edges, or a mode name to
+            filter to edges active in that mode.
 
-    Notes
-    -----
-    This function assumes you already have a helper such as
-    `edge_matches_execution_mode(edge, execution_mode)` available elsewhere.
+    Returns:
+        Filtered list of edges.
+
+    Notes:
+        This function delegates to :func:`edge_matches_execution_mode` to
+        determine whether an edge is active in the requested mode.
 
     """
     if execution_mode is None or execution_mode == NodeExecutionMode.ALL:
@@ -224,7 +292,18 @@ def edge_matches_execution_mode(
     source_config: NodeConfig,
     target_config: NodeConfig,
 ) -> bool:
-    """Return True if the edge has at least one port_map matching the given execution mode."""
+    """Check whether an edge is active in the given execution mode.
+
+    Args:
+        edge: The edge to check.
+        execution_mode: The execution mode to match against.
+        source_config: Config of the source node.
+        target_config: Config of the target node.
+
+    Returns:
+        ``True`` if at least one port mapping matches *execution_mode*.
+
+    """
     exec_modes = [
         (
             source_config.out_ports[source_port].mode,
@@ -241,7 +320,15 @@ def edge_matches_execution_mode(
 
 
 def edge_to_hover_text_mapping(edges: list[Edge]) -> dict[tuple[str, str], str]:
-    """Map edges to plain-text hover content."""
+    """Map edges to plain-text hover content.
+
+    Args:
+        edges: List of pipeline edges.
+
+    Returns:
+        Dict mapping ``(source, target)`` to multi-line hover strings.
+
+    """
     mapping: dict[tuple[str, str], str] = {}
 
     for edge in edges:
@@ -261,8 +348,16 @@ def edge_curved_mapping(
 ) -> dict[tuple[str, str], bool]:
     """Map edges to whether they should be rendered as curved.
 
-    Edges targeting metric nodes are curved to visually separate them from the
-    main execution flow.
+    Edges targeting metric nodes are curved to visually separate them from
+    the main execution flow.
+
+    Args:
+        edges: List of pipeline edges.
+        node_configs: Mapping of node names to ``(class_name, NodeConfig)``.
+
+    Returns:
+        Dict mapping ``(source, target)`` to a boolean (``True`` = curved).
+
     """
     return {
         (edge.source, edge.target): node_configs[edge.target][1].node_type
@@ -277,7 +372,16 @@ def edge_curved_mapping(
 
 
 def _dict_to_hover_html(data: Any, indent: int = 0) -> str:
-    """Format nested dict/list data as HTML for Plotly hover content."""
+    """Format nested dict/list data as HTML for Plotly hover content.
+
+    Args:
+        data: Arbitrary data (dict, list, or scalar) to format.
+        indent: Current nesting level for indentation.
+
+    Returns:
+        HTML-escaped string with ``<br>`` line breaks.
+
+    """
     pad = "&nbsp;" * 4 * indent
 
     if isinstance(data, dict):
@@ -305,12 +409,14 @@ def _dict_to_hover_html(data: Any, indent: int = 0) -> str:
 
 
 def _node_hover_html(node_name: str, node_data: Any) -> str:
+    """Build an HTML hover snippet for a single node."""
     title = f"<b>{html.escape(str(node_name))}</b>"
     body = _dict_to_hover_html(node_data)
     return f"{title}<br>{body}" if body else title
 
 
 def _edge_hover_html(source: str, target: str, ports_map: list[tuple[str, str]]) -> str:
+    """Build an HTML hover snippet for a single edge."""
     lines = [
         f"<b>{html.escape(source)} → {html.escape(target)}</b>",
         "<b>Ports mapping</b>",
@@ -328,6 +434,7 @@ def _edge_hover_html(source: str, target: str, ports_map: list[tuple[str, str]])
 
 
 def _vertical_center(pos: dict[str, Any]) -> float:
+    """Return the vertical midpoint of all node positions."""
     ys = [float(coords[1]) for coords in pos.values()]
     return (min(ys) + max(ys)) / 2.0
 
@@ -609,7 +716,16 @@ def edge_to_color_mapping(
     edges: list[Edge],
     execution_mode: str | None = None,
 ) -> dict[tuple[str, str], str]:
-    """Map edges to colors based on execution mode."""
+    """Map edges to colors based on execution mode.
+
+    Args:
+        edges: List of pipeline edges.
+        execution_mode: Mode name.  Defaults to ``"all"`` when ``None``.
+
+    Returns:
+        Dict mapping ``(source, target)`` to CSS color strings.
+
+    """
     if execution_mode is None:
         execution_mode = str(NodeExecutionMode.ALL)
     exec_to_color_mapping = {
@@ -631,7 +747,7 @@ def _straight_edge_polyline(
     p1: tuple[float, float],
     steps: int = 100,
 ) -> tuple[list[float], list[float]]:
-    """Sample a straight edge into many points for reliable hover along the line."""
+    """Sample a straight line into many points for reliable Plotly hover."""
     x0, y0 = p0
     x1, y1 = p1
     ts = np.linspace(0.0, 1.0, steps + 1)
@@ -652,7 +768,20 @@ def render_pipeline_graph_plotly(
     figsize: tuple[int, int] = (12, 6),
     execution_mode: str | None = None,
 ) -> go.Figure:
-    """Render the pipeline graph with Plotly and a dropdown to select execution mode."""
+    """Render the pipeline graph with Plotly and a dropdown to select execution mode.
+
+    Args:
+        pipeline: Compiled pipeline to render.
+        title: Figure title.
+        figsize: ``(width, height)`` in logical inches (multiplied by 100 for
+            pixel dimensions).
+        execution_mode: Initial execution mode for the dropdown.  ``None``
+            defaults to ``"all"``.
+
+    Returns:
+        A Plotly :class:`~plotly.graph_objects.Figure`.
+
+    """
     version = pipeline.version
 
     graph = pipeline.graph

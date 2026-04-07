@@ -15,6 +15,11 @@ from typing import Any, Protocol, runtime_checkable
 
 
 def _in_ipython_notebook() -> bool:
+    """Detect whether code is running inside a Jupyter/IPython notebook.
+
+    Returns:
+        ``True`` if an IPython kernel is active, ``False`` otherwise.
+    """
     try:
         from IPython import get_ipython
 
@@ -27,22 +32,62 @@ def _in_ipython_notebook() -> bool:
 
 
 def _is_class_like(obj: Any) -> bool:
+    """Check whether *obj* is a class (not an instance).
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        ``True`` if *obj* is a class.
+    """
     return inspect.isclass(obj)
 
 
 def _safe_name(obj: Any) -> str:
+    """Return the ``__name__`` of *obj*, falling back to the type name.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        A human-readable name string.
+    """
     return getattr(obj, "__name__", type(obj).__name__)
 
 
 def _safe_qualname(obj: Any) -> str:
+    """Return the qualified name of *obj*, falling back to :func:`_safe_name`.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        The qualified name string.
+    """
     return getattr(obj, "__qualname__", _safe_name(obj))
 
 
 def _safe_module(obj: Any) -> str:
+    """Return the ``__module__`` of *obj*, or an empty string if unavailable.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        The module path string.
+    """
     return getattr(obj, "__module__", "")
 
 
 def _safe_doc_first_line(obj: Any) -> str:
+    """Extract the first line of *obj*'s docstring.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        The first non-empty line of the docstring, or ``""`` on failure.
+    """
     try:
         doc = inspect.getdoc(obj)
         if not doc:
@@ -53,6 +98,14 @@ def _safe_doc_first_line(obj: Any) -> str:
 
 
 def _safe_file(obj: Any) -> str:
+    """Return the source file path for *obj*, or ``""`` on failure.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        An absolute file path string, or ``""``.
+    """
     try:
         return inspect.getsourcefile(obj) or ""
     except Exception:
@@ -60,6 +113,14 @@ def _safe_file(obj: Any) -> str:
 
 
 def _safe_lineno(obj: Any) -> int | None:
+    """Return the source line number where *obj* is defined.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        The line number, or ``None`` if it cannot be determined.
+    """
     try:
         _, lineno = inspect.getsourcelines(obj)
         return lineno
@@ -95,12 +156,29 @@ def _serialize_value(value: Any) -> Any:
 
 
 def _format_plain_value(value: Any) -> str:
+    """Format a single cell value for plain-text table output.
+
+    Args:
+        value: The raw cell value (may be a serialized class dict or scalar).
+
+    Returns:
+        A string suitable for display in a text table.
+    """
     if isinstance(value, dict) and value.get("__kind__") == "class":
         return str(value.get("display", ""))
     return str(value)
 
 
 def _clip(s: str, width: int) -> str:
+    """Truncate *s* to *width* characters, appending an ellipsis if clipped.
+
+    Args:
+        s: The string to clip.
+        width: Maximum allowed width.
+
+    Returns:
+        The original or truncated string.
+    """
     return s if len(s) <= width else s[: max(0, width - 1)] + "…"
 
 
@@ -242,6 +320,17 @@ class RegistryDisplayMixin:
         max_width: int = 140,
         max_col_width: int = 32,
     ) -> str:
+        """Render registry contents as an ASCII table.
+
+        Args:
+            columns: Subset of columns to include. Defaults to auto-detected columns.
+            max_width: Maximum total table width in characters.
+            max_col_width: Maximum width for any single column.
+
+        Returns:
+            A formatted plain-text table string, or ``"<empty registry>"``
+            when there are no entries.
+        """
         rows = self._rows()
         if not rows:
             return "<empty registry>"
@@ -296,6 +385,13 @@ class RegistryDisplayMixin:
         include_metadata: bool = False,
         include_source_inspector: bool = True,
     ):
+        """Display an interactive ipywidgets table inside a Jupyter notebook.
+
+        Args:
+            columns: Subset of columns to show. Defaults to auto-detected columns.
+            include_metadata: If ``True``, include ``__``-suffixed metadata columns.
+            include_source_inspector: If ``True``, add a source-code viewer widget.
+        """
         import ipywidgets as widgets
         import pandas as pd
         from IPython.display import display
@@ -368,6 +464,11 @@ class RegistryDisplayMixin:
         summary = widgets.HTML()
 
         def apply_filters():
+            """Apply search, sort, column selection, and row limit to the dataframe.
+
+            Returns:
+                A filtered and sorted ``DataFrame`` ready for display.
+            """
             filtered = df.copy()
 
             q = search.value.strip().lower()
@@ -403,6 +504,7 @@ class RegistryDisplayMixin:
             return filtered[selected_columns].head(limit.value)
 
         def render(_=None):
+            """Re-render the HTML table and summary after a widget change."""
             filtered = apply_filters()
             if filtered.empty:
                 table_html.value = "<i>No matches.</i>"
@@ -536,24 +638,22 @@ class RegistryDisplayMixin:
     ):
         """Return a nicely formatted overview of the registry.
 
-        In a notebook:
-            shows an interactive widget if pandas + ipywidgets are available.
+        In a notebook environment an interactive ipywidgets table is displayed
+        (when pandas and ipywidgets are available).  Outside a notebook a
+        plain-text ASCII table string is returned.
 
-        Outside a notebook:
-            returns a plain-text table string.
+        Args:
+            notebook: Force notebook mode on or off. If ``None``, auto-detect.
+            columns: Optional subset of columns to show.
+            include_metadata: If ``True``, also show generated metadata columns
+                such as ``node_class__module``, ``node_class__doc``, etc.
+            include_source_inspector: In notebook mode, show a source-code
+                viewer for class-like fields.
 
-        Parameters
-        ----------
-        notebook:
-            Force notebook mode on/off. If None, auto-detect.
-        columns:
-            Optional subset of columns to show.
-        include_metadata:
-            If True, also show generated metadata columns such as:
-            node_class__module, node_class__doc, ...
-        include_source_inspector:
-            In notebook mode, show source viewer for class-like fields.
-
+        Returns:
+            A plain-text table string when running outside a notebook (or when
+            ipywidgets is unavailable). ``None`` when the notebook widget is
+            displayed successfully.
         """
         if notebook is None:
             notebook = _in_ipython_notebook()

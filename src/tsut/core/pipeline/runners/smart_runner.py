@@ -74,7 +74,13 @@ class SmartRunner(
     # --- PipelineRunner API implementation ---
 
     def train(self, input_data: Mapping[str, Mapping[str, Data]] | None = None) -> None:
-        """Train the pipeline."""
+        """Train the pipeline by executing the graph up to the sink node.
+
+        Args:
+            input_data: Optional external data keyed by
+                ``{node_name: {port_name: Data}}``.
+
+        """
         self._reset_caches()
         self._input_data = input_data
         self._mode = NodeExecutionMode.TRAINING
@@ -93,7 +99,16 @@ class SmartRunner(
     def evaluate(
         self, input_data: Mapping[str, Mapping[str, Data]] | None = None
     ) -> dict[str, Any]:
-        """Evaluate the pipeline and return the metrics."""
+        """Evaluate the pipeline by executing all metric nodes.
+
+        Args:
+            input_data: Optional external data keyed by
+                ``{node_name: {port_name: Data}}``.
+
+        Returns:
+            Dict mapping metric node names to their computed outputs.
+
+        """
         self._reset_caches()
         self._input_data = input_data  # Store the input data for use during evaluation if needed by the nodes.
         self._mode = NodeExecutionMode.EVALUATION
@@ -114,7 +129,16 @@ class SmartRunner(
     def infer(
         self, input_data: Mapping[str, Mapping[str, Data]] | None = None
     ) -> dict[str, Data]:
-        """Run inference with the pipeline."""
+        """Run inference and return the sink node outputs.
+
+        Args:
+            input_data: Optional external data keyed by
+                ``{node_name: {port_name: Data}}``.
+
+        Returns:
+            Dict mapping output port names to their :class:`Data` values.
+
+        """
         self._reset_caches()
         self._input_data = input_data  # Store the input data for use during inference if needed by the nodes.
         self._mode = NodeExecutionMode.INFERENCE
@@ -191,7 +215,19 @@ class SmartRunner(
         return list(nx.topological_sort(self.pipeline.graph))
 
     def _call_node(self, node_name: str) -> dict[str, Data]:
-        """Recuservely calls the nodes then its predecessors, and returns the output of the node with the common data type."""
+        """Recursively execute a node and all its predecessors.
+
+        Results are memoized in ``_node_outputs`` so each node is executed
+        at most once per pipeline run.
+
+        Args:
+            node_name: Name of the node to execute.
+
+        Returns:
+            Dict mapping output port names to :class:`Data` objects in the
+            common data type.
+
+        """
         self._log.log_node_call(node_name, self._mode)
         # Get the predecessors of the node to gather inputs
         predecessors = list(self.pipeline.graph.predecessors(node_name))
@@ -220,7 +256,16 @@ class SmartRunner(
     def _execute_node(
         self, node_name: str, incoming_edges: list[Edge]
     ) -> dict[str, Data]:
-        """Execute a specific node in the pipeline and return its output in the common data type."""
+        """Execute a single node after gathering and converting its inputs.
+
+        Args:
+            node_name: Name of the node to execute.
+            incoming_edges: Edges feeding into this node.
+
+        Returns:
+            Dict mapping output port names to :class:`Data` objects.
+
+        """
         node = self.node_objects[node_name]
         # Gather the inputs for the node by converting the outputs of the predecessor nodes to the expected
         # input types of the node using the edge information.
@@ -264,7 +309,24 @@ class SmartRunner(
         node_name: str,
         pred_node_name: str,
     ) -> Data:
-        """Convert the output of the source node to the expected input type of the target node using the edge information."""
+        """Validate that the source output matches the target port's expected type.
+
+        Args:
+            target_node: The receiving node.
+            source_node: The producing node.
+            source_output: Outputs from the source node.
+            target_key: Input port name on the target node.
+            source_key: Output port name on the source node.
+            node_name: Name of the target node (for logging).
+            pred_node_name: Name of the source node (for logging).
+
+        Returns:
+            The validated :class:`Data` object ready for the target node.
+
+        Raises:
+            TypeError: If the data type does not match.
+
+        """
         # Get the expected input type for the target node from the edge information
         target_port = target_node.in_ports[target_key]
         source_port = source_node.out_ports[source_key]
@@ -295,7 +357,20 @@ class SmartRunner(
     def _get_node_outputs(
         self, node_name: str, inputs: dict[str, tuple[ArrayLike, DataContext]]
     ) -> dict[str, Data]:
-        """Get the outputs of a node in the common data type."""
+        """Execute a node and convert its raw outputs to the common data type.
+
+        Args:
+            node_name: Name of the node to execute.
+            inputs: Pre-converted inputs keyed by port name.
+
+        Returns:
+            Dict mapping output port names to :class:`Data` objects.
+
+        Raises:
+            ValueError: If the current execution mode is unsupported.
+            TypeError: If the node is not a :class:`Node` instance.
+
+        """
         self._check_inputs_completeness(node_name, inputs)
         node = self.node_objects[node_name]
         if (
@@ -333,10 +408,18 @@ class SmartRunner(
     def _check_inputs_completeness(
         self, node_name: str, inputs: dict[str, tuple[ArrayLike, DataContext]]
     ) -> None:
-        """Check if all required inputs for a node are present.
+        """Check that all required inputs for a node are present.
 
         A missing input is tolerated when the port's ``mode`` list does not
         include the current execution mode (and does not include ``"all"``).
+
+        Args:
+            node_name: Name of the node being checked.
+            inputs: Currently available inputs keyed by port name.
+
+        Raises:
+            ValueError: If a required input is missing for the current mode.
+
         """
         node = self.node_objects[node_name]
         if not hasattr(node, "in_ports") or node.in_ports is None:

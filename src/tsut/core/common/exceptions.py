@@ -1,4 +1,4 @@
-"""Exceptions module."""
+"""Custom exception classes for the TSUT framework."""
 
 
 # --- Pipeline exceptions ---

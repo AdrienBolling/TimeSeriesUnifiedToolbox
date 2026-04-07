@@ -9,10 +9,15 @@ from tsut.core.nodes.node import Node
 from typing import Any
 
 class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
-    """Define the interface for a PipelineRunnerWrapper.
+    """Abstract wrapper that adds functionality around a :class:`PipelineRunner`.
 
-    The goal of the PipelineRunnerWrapper is to wrap around a PipelineRunner and add additional functionality to it. (Such as tuning, logging, etc.)
-    It is the object upon which an user interacts with when they want to use the additional functionality provided by the wrapper.
+    Subclasses can layer cross-cutting concerns (tuning, logging, caching,
+    etc.) on top of any runner without modifying its implementation.
+
+    Type Parameters:
+        D_O: Data output type of the wrapped runner.
+        M: Metrics output type of the wrapped runner.
+        C: Configuration model for the wrapper itself.
     """
 
     def __init__(
@@ -21,7 +26,13 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
         *,
         config: C,
     ) -> None:
-        """Initialize the PipelineRunnerWrapper with a pipeline runner and configuration."""
+        """Initialize the PipelineRunnerWrapper.
+
+        Args:
+            pipeline_runner: The runner instance to wrap.
+            config: Wrapper-specific configuration.
+
+        """
         self._pipeline_runner = pipeline_runner
         self._config = config
 

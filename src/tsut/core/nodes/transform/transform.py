@@ -36,7 +36,21 @@ H = TypeVar("H", bound=TransformHyperParameters)
 
 
 class TransformConfig[H, R](NodeConfig):
-    """Base metadata configuration for all Transform nodes in the TSUT Framework."""
+    """Configuration for all Transform nodes in the TSUT Framework.
+
+    Generic over two type parameters:
+
+    * ``H`` -- a :class:`TransformHyperParameters` subclass holding tuneable
+      parameters (e.g. window size, normalisation mode).
+    * ``R`` -- a :class:`TransformRunningConfig` subclass holding runtime
+      execution parameters.
+
+    Attributes:
+        node_type: Always ``NodeType.TRANSFORM``.
+        hyperparameters: Tuneable hyperparameters for this transform.
+        running_config: Runtime execution parameters.
+
+    """
 
     node_type: NodeType = NodeType.TRANSFORM
     hyperparameters: H
@@ -44,27 +58,51 @@ class TransformConfig[H, R](NodeConfig):
 
 
 class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC):
-    """Base class for all transform nodes in the TSUT Framework."""
+    """Base class for all transform nodes in the TSUT Framework.
+
+    Tracks a ``_fitted`` flag that is set to ``True`` after :meth:`node_fit`
+    completes. Calling :meth:`node_transform` before fitting raises a
+    ``ValueError``.
+    """
 
     metadata = TransformMetadata()
 
     def __init__(self, *, config: TransformConfig) -> None:
-        """Initialize the TransformNode with the given configuration."""
+        """Initialise the TransformNode with the given configuration.
+
+        Args:
+            config: Transform configuration including hyperparameters and
+                runtime settings.
+
+        """
         self._config = config
-        self._fitted = False  # To keep track of whether the transform has been fitted or not. This can be useful for transforms that require fitting before transforming.
+        self._fitted = False
 
     # --- Abstract Methods to reimplement ---
 
     @abstractmethod
     def fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Fit the transform with the given data."""
+        """Fit the transform's internal state on the provided data.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        """
         ...
 
     @abstractmethod
     def transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Apply the transform to the given data."""
+        """Apply the fitted transform to the given data.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
         ...
 
     # --- API convenience ---
@@ -92,14 +130,30 @@ class TransformNode[D_I, D_C_I, D_O, D_C_O, P](Node[D_I, D_C_I, D_O, D_C_O], ABC
     # --- Implementations for Node interface, don't touch without a very good reason ---
 
     def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Override of the Node's fit method to call the TransformNode's fit method."""
+        """Delegate to :meth:`fit` and mark the transform as fitted.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        """
         self.fit(data=data)
         self._fitted = True
 
     def node_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Override of the Node's transform method to call the TransformNode's transform method."""
+        """Delegate to :meth:`transform` after verifying the node has been fitted.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        Raises:
+            ValueError: If the transform has not been fitted yet.
+
+        """
         if hasattr(self, "_fitted") and not self._fitted:
             raise ValueError("TransformNode must be fitted before calling transform.")
         return self.transform(data=data)

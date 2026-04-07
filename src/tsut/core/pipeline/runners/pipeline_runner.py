@@ -20,10 +20,11 @@ class RunnerConfig(BaseModel):
 
 
 class PipelineRunner(ABC):
-    """Define the interface for a TSUT PipelineRunner.
+    """Abstract base class for executing a compiled TSUT Pipeline.
 
-    The goal of the PipelineRunner is to encapsulate all logic related to effectively run a pipeline. (Such as training, tuning, evaluating, etc.)
-    It is the object effectively upon from which an user effectively interacts with a pipeline. (train/evaluate/tune/etc.)
+    A ``PipelineRunner`` encapsulates the logic for training, evaluating, and
+    running inference on a pipeline.  Concrete subclasses implement the
+    actual execution strategy (e.g. :class:`SmartRunner`).
     """
 
     def __init__(
@@ -32,7 +33,13 @@ class PipelineRunner(ABC):
         *,
         config: RunnerConfig,
     ) -> None:
-        """Initialize the PipelineRunner with a pipeline and configuration."""
+        """Initialize the PipelineRunner with a pipeline and configuration.
+
+        Args:
+            pipeline: A compiled :class:`Pipeline` to execute.
+            config: Runner-specific configuration.
+
+        """
         self._pipeline = pipeline
         self._config = config
         self._mode = NodeExecutionMode.DEFAULT
@@ -85,19 +92,45 @@ class PipelineRunner(ABC):
 
     @abstractmethod
     def train(self, input_data: Mapping[str, Mapping[str, Data]] | None = None) -> None:
-        """Train the pipeline."""
+        """Train the pipeline end-to-end.
+
+        Args:
+            input_data: Optional external data keyed by
+                ``{node_name: {port_name: Data}}``.  Source nodes may use
+                this instead of their built-in data loading.
+
+        """
         ...
 
     @abstractmethod
     def evaluate(
         self, input_data: Mapping[str, Mapping[str, Data]] | None = None
     ) -> Mapping[str, Data]:
-        """Evaluate the pipeline."""
+        """Evaluate the pipeline and return computed metrics.
+
+        Args:
+            input_data: Optional external data (same structure as
+                :meth:`train`).
+
+        Returns:
+            Mapping of metric names to their computed :class:`Data` values.
+
+        """
         ...
 
     @abstractmethod
     def infer(
         self, input_data: Mapping[str, Mapping[str, Data]] | None = None
     ) -> Mapping[str, Data]:
-        """Run inference with the pipeline."""
+        """Run inference and return the sink node outputs.
+
+        Args:
+            input_data: Optional external data (same structure as
+                :meth:`train`).
+
+        Returns:
+            Mapping of output port names to their :class:`Data` values
+            from the sink node.
+
+        """
         ...

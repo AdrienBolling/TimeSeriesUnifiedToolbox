@@ -1,3 +1,5 @@
+"""Runtime type-guard functions for TSUT node and config introspection."""
+
 from typing import TypeGuard
 
 from pydantic import BaseModel
@@ -17,9 +19,15 @@ from tsut.core.nodes.node import Node, NodeConfig
 
 # has Hyperparameters typeguards
 def has_hyperparameters(obj: Node) -> TypeGuard[HasHyperparametersNode]:
-    """Typeguard to check if a Node has hyperparameters in its configuration.
+    """Check whether a Node has non-empty hyperparameters in its config.
 
-    We check if the Node's configuration has a 'hyperparameters' attribute and that it is not None or an empty BaseModel.
+    Args:
+        obj: The node to inspect.
+
+    Returns:
+        ``True`` if ``obj.config.hyperparameters`` exists, is a non-empty
+        ``BaseModel``, and has at least one populated field.
+
     """
     hp = getattr(obj.config, "hyperparameters", None)
     # Check if hp exists and is not None
@@ -33,7 +41,15 @@ def has_hyperparameters(obj: Node) -> TypeGuard[HasHyperparametersNode]:
 
 
 def has_hyperparameters_config(obj: NodeConfig) -> TypeGuard[HasHyperparametersConfig]:
-    """Typeguard to check if a Node's configuration has hyperparameters."""
+    """Check whether a NodeConfig has non-empty hyperparameters.
+
+    Args:
+        obj: The node configuration to inspect.
+
+    Returns:
+        ``True`` if ``obj.hyperparameters`` is a non-empty ``BaseModel``.
+
+    """
     hp = getattr(obj, "hyperparameters", None)
     # Check if hp exists and is not None
     if hp is None:
@@ -47,7 +63,15 @@ def has_hyperparameters_config(obj: NodeConfig) -> TypeGuard[HasHyperparametersC
 
 # has RunningConfig typeguards
 def has_running_config(obj: Node) -> TypeGuard[HasRunningConfigNode]:
-    """Typeguard to check if a Node has a running configuration in its configuration."""
+    """Check whether a Node has a non-empty running configuration.
+
+    Args:
+        obj: The node to inspect.
+
+    Returns:
+        ``True`` if ``obj.config.running_config`` is a non-empty ``BaseModel``.
+
+    """
     rc = getattr(obj.config, "running_config", None)
     # Check if rc exists and is not None
     if rc is None:
@@ -60,7 +84,15 @@ def has_running_config(obj: Node) -> TypeGuard[HasRunningConfigNode]:
 
 
 def has_running_config_config(obj: NodeConfig) -> TypeGuard[HasRunningConfigConfig]:
-    """Typeguard to check if a Node's configuration has a running configuration."""
+    """Check whether a NodeConfig has a non-empty running configuration.
+
+    Args:
+        obj: The node configuration to inspect.
+
+    Returns:
+        ``True`` if ``obj.running_config`` is a non-empty ``BaseModel``.
+
+    """
     rc = getattr(obj, "running_config", None)
     # Check if rc exists and is not None
     if rc is None:
@@ -74,7 +106,15 @@ def has_running_config_config(obj: NodeConfig) -> TypeGuard[HasRunningConfigConf
 
 # has Hyperparameter_space typeguards
 def has_hyperparameter_space(obj: Node) -> TypeGuard[HasHyperparameterSpace]:
-    """Typeguard to check if a Node has a hyperparameter space."""
+    """Check whether a Node exposes a hyperparameter search space.
+
+    Args:
+        obj: The node to inspect.
+
+    Returns:
+        ``True`` if ``obj.hyperparameter_space`` exists and is a ``dict``.
+
+    """
     return hasattr(obj, "hyperparameter_space") and isinstance(
         obj.hyperparameter_space,  # type: ignore
         dict,
@@ -83,7 +123,15 @@ def has_hyperparameter_space(obj: Node) -> TypeGuard[HasHyperparameterSpace]:
 
 # has Params typeguards
 def has_params(obj: Node) -> TypeGuard[HasParamsNode]:
-    """Typeguard to check if a Node has parameters."""
+    """Check whether a Node implements ``get_params`` and ``set_params``.
+
+    Args:
+        obj: The node to inspect.
+
+    Returns:
+        ``True`` if both methods exist and are callable.
+
+    """
     return (
         hasattr(obj, "get_params")
         and callable(obj.get_params)  # type: ignore
@@ -94,19 +142,43 @@ def has_params(obj: Node) -> TypeGuard[HasParamsNode]:
 
 # is Sink Node typeguard
 def is_sink_node(obj: Node) -> TypeGuard[Sink]:
-    """Typeguard to check if a Node is a Sink Node."""
+    """Check whether a Node is a Sink node.
+
+    Args:
+        obj: The node to inspect.
+
+    Returns:
+        ``True`` if *obj* has node type ``"SINK"`` and is an instance of :class:`Sink`.
+
+    """
     return obj.config.node_type == "SINK" and isinstance(obj, Sink)
 
 
 # is List typeguard
 def is_list(obj: object) -> TypeGuard[list]:
-    """Typeguard to check if an object is a list."""
+    """Check whether *obj* is a ``list``.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        ``True`` if *obj* is a list instance.
+
+    """
     return isinstance(obj, list)
 
 
 # accepts inputs typeguard
 def accepts_inputs_source_node(node: Node) -> TypeGuard[AcceptsInputsSourceNode]:
-    """Typeguard to check if a Node accepts inputs (i.e., is not a pure data source)."""
+    """Check whether a source Node accepts inputs from other nodes.
+
+    Args:
+        node: The node to inspect.
+
+    Returns:
+        ``True`` if *node* is a ``SOURCE`` node with ``accepts_inputs`` set.
+
+    """
     if hasattr(node, "accepts_inputs") and node.config.node_type == "SOURCE":
         return node.accepts_inputs  # type: ignore
     return False

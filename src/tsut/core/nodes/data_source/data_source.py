@@ -15,16 +15,27 @@ class DataSourceMetadata(BaseModel):
 
 
 class DataSourceRunningConfig(BaseModel):
-    """Configuration for running a DataSource node."""
+    """Runtime parameters for executing a DataSource node.
 
-    # Add any specific fields needed for running the data source if necessary
+    Subclass this to add source-specific execution settings (e.g. connection
+    timeouts, batch sizes) that are not part of the source's identity.
+    """
 
 
 R = TypeVar("R", bound=DataSourceRunningConfig)
 
 
 class DataSourceConfig[R](NodeConfig):
-    """Base metadata configuration for all DataSource nodes in the TSUT Framework."""
+    """Configuration for all DataSource nodes in the TSUT Framework.
+
+    Generic over ``R``, which must be a :class:`DataSourceRunningConfig`
+    subclass carrying source-specific runtime parameters.
+
+    Attributes:
+        node_type: Always ``NodeType.SOURCE``.
+        running_config: Optional runtime parameters for source execution.
+
+    """
 
     node_type: NodeType = NodeType.SOURCE
     running_config: R | None = None
@@ -41,7 +52,10 @@ class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
 
     @abstractmethod
     def setup_source(self) -> None:
-        """Set up the data source (e.g., establish connections, load resources)."""
+        """Set up the data source (e.g. establish connections, load resources).
+
+        Called by :meth:`node_fit` during the pipeline's fit phase.
+        """
         ...
 
     @abstractmethod
@@ -50,8 +64,12 @@ class DataSourceNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O], ABC):
     ) -> dict[str, tuple[D_O, D_C_O]]:
         """Fetch data from the source.
 
+        Args:
+            data: Mapping of port name to ``(data, context)`` tuples. Typically
+                unused for data sources but provided for API consistency.
+
         Returns:
-            Fetched data
+            Mapping of output port name to ``(data, context)`` tuples.
 
         """
         ...

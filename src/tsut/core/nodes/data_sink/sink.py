@@ -11,7 +11,12 @@ from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType, Port
 
 
 class SinkConfig(NodeConfig):
-    """Sink Node configuration."""
+    """Configuration for a Sink node.
+
+    Provides a default ``dump`` input port and a placeholder ``_`` output port.
+    Both accept mixed-category pandas data with arbitrary shape. The actual
+    ports are redefined during pipeline compilation when connections are made.
+    """
 
     node_type: NodeType = NodeType.SINK
     in_ports: dict[str, Port] = {
@@ -37,9 +42,11 @@ class SinkMetadata(NodeMetadata):
 
 
 class Sink(Node[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext]):
-    """Sink Node.
+    """Terminal node that collects pipeline outputs.
 
-    A Sink Node is a Node that consumes data from its input ports and does not produce any output.
+    A Sink consumes data on its input ports and passes it through unchanged.
+    New input/output port pairs are added dynamically during pipeline
+    compilation via :meth:`add_port`.
     """
 
     metadata = SinkMetadata()
@@ -62,7 +69,14 @@ class Sink(Node[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataConte
         return data
 
     def add_port(self, port_name: str) -> None:
-        """Add a port to the Sink Node. This method will be called during pipeline compilation when connecting the Sink Node to other nodes."""
+        """Add a matching input/output port pair to the Sink.
+
+        Called during pipeline compilation when connecting upstream nodes.
+
+        Args:
+            port_name: Name for the new port pair.
+
+        """
         self.in_ports[port_name] = Port(
             arr_type=ArrayLikeEnum.PANDAS,
             data_category=DataCategoryEnum.MIXED,

@@ -104,9 +104,9 @@ class TabularCSVFetcher(
     is consistent with the CSV columns.  ``fetch_data`` reads them and
     returns the data on the ``"output"`` port.
 
-    Example:
-    -------
-    >>> cfg = TabularCSVFetcherConfig(
+    Example::
+
+        >>> cfg = TabularCSVFetcherConfig(
     ...     running_config=TabularCSVFetcherRunningConfig(
     ...         csv_path="data/train.csv",
     ...         context_path="data/train_context.json",

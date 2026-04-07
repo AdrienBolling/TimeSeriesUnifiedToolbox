@@ -1,4 +1,4 @@
-"""Placeholder for common Mixin stuff."""
+"""Base settings and utilities for framework mixins."""
 import uuid
 
 from pydantic import PrivateAttr

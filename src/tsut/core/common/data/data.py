@@ -135,7 +135,13 @@ class TabularDataContext(DataContext):
         return (self.columns, self.dtypes, self.categories)
 
     def remove_columns(self, columns_to_remove: list[str]) -> None:
-        """Remove columns from the context."""
+        """Remove columns (and their dtypes/categories) from the context.
+
+        Args:
+            columns_to_remove: Names of the columns to drop. Columns not
+                present in the context are silently ignored.
+
+        """
         # Find the indexes of the columns to remove
         indexes_to_remove = [
             self.columns.index(col) for col in columns_to_remove if col in self.columns
@@ -155,7 +161,17 @@ class TabularDataContext(DataContext):
 def tabular_context_from_dict_dump(
     dump_dict: dict[str, list[str]],
 ) -> TabularDataContext:
-    """Load the TabularDataContext from a dictionary."""
+    """Reconstruct a :class:`TabularDataContext` from its serialized dict form.
+
+    Args:
+        dump_dict: Dictionary with ``"columns"``, ``"dtypes"``, and
+            ``"categories"`` keys, as produced by
+            :attr:`TabularDataContext.dump_dict`.
+
+    Returns:
+        A new :class:`TabularDataContext` instance.
+
+    """
     return TabularDataContext(
         columns=dump_dict["columns"],
         dtypes=[np.dtype(dtype_str) for dtype_str in dump_dict["dtypes"]],
@@ -195,9 +211,25 @@ class TabularData(Data):
         dtypes: list[np.dtype],
         categories: list[type[DataCategory]] | None = None,
         *,
-        infer_categories: bool = True,  # Whether to infer categories from dtypes if categories are not provided. This is a bit hacky but it should work for most cases. We can always allow the user to explicitly pass the categories if they want to be more precise.
+        infer_categories: bool = True,
     ) -> None:
-        """Initialize the TabularData."""
+        """Initialize the TabularData from an array-like source.
+
+        Args:
+            data: The raw data as a pandas DataFrame, NumPy array, or torch Tensor.
+            columns: Column names corresponding to the feature axis.
+            dtypes: Expected NumPy dtypes for each column.
+            categories: Per-column data category types. Required for NumPy/Tensor
+                inputs unless *infer_categories* is ``True``.
+            infer_categories: If ``True`` and *categories* is ``None``, infer
+                categories from *dtypes* when *data* is a DataFrame.
+                Defaults to ``True``.
+
+        Raises:
+            ValueError: If *data* is an unsupported type or if *categories* is
+                missing for non-DataFrame inputs.
+
+        """
         self._infer_categories = infer_categories
         if isinstance(data, pd.DataFrame):
             # from_pandas may infer categories, so validate *after* conversion.
@@ -290,7 +322,23 @@ class TabularData(Data):
         dtypes: list[np.dtype] | None,
         categories: list[type[DataCategory]] | None,
     ) -> bool:
-        """Validate the schema of a pandas DataFrame for TabularData."""
+        """Validate dimensional consistency of the data and its metadata.
+
+        Args:
+            data: The array-like data to validate (may be ``None``).
+            columns: Column name list.
+            dtypes: Dtype list.
+            categories: Category type list.
+
+        Returns:
+            ``True`` if validation passes.
+
+        Raises:
+            ValueError: If the data is not 2-D, or if the lengths of
+                *columns*, *dtypes*, or *categories* do not match the feature
+                dimension of *data*.
+
+        """
         # Check that the data is 2D, has column names, and that the dtypes can be inferred.
         if data is not None and data.ndim != self._TABULAR_NDIM:
             raise ValueError(
@@ -321,7 +369,22 @@ class TabularData(Data):
     def from_pandas(
         self, data: pd.DataFrame, categories: list[type[DataCategory]] | None = None
     ) -> None:
-        """Initialize the TabularData from a pandas DataFrame."""
+        """Initialize the TabularData from a pandas DataFrame.
+
+        Column names, dtypes, and (optionally) categories are extracted
+        directly from *data*.  If *categories* is ``None`` and
+        ``infer_categories`` was set at construction, categories are inferred
+        from the column dtypes.
+
+        Args:
+            data: Source DataFrame with shape ``(batch, features)``.
+            categories: Explicit per-column category types. If ``None``,
+                categories are inferred when ``infer_categories`` is enabled.
+
+        Raises:
+            ValueError: If *categories* length does not match the number of columns.
+
+        """
         columns = data.columns.tolist()
         dtypes = data.dtypes.tolist()
 
@@ -357,7 +420,20 @@ class TabularData(Data):
         dtypes: list[np.dtype],
         categories: list[type[DataCategory]],
     ) -> None:
-        """Initialize the TabularData from a numpy array."""
+        """Initialize the TabularData from a NumPy array.
+
+        The array is converted to a pandas DataFrame internally.
+
+        Args:
+            data: 2-D NumPy array with shape ``(batch, features)``.
+            columns: Column names for each feature.
+            dtypes: Target NumPy dtype per column.
+            categories: Per-column data category types.
+
+        Raises:
+            ValueError: If dimensions or lengths are inconsistent.
+
+        """
         self._validate_data(data, columns, dtypes, categories)
         self._data = pd.DataFrame(
             data,
@@ -376,12 +452,34 @@ class TabularData(Data):
         dtypes: list[np.dtype],
         categories: list[type[DataCategory]],
     ) -> None:
-        """Initialize the TabularData from a torch tensor."""
+        """Initialize the TabularData from a PyTorch tensor.
+
+        The tensor is moved to CPU, converted to NumPy, then delegated to
+        :meth:`from_numpy`.
+
+        Args:
+            data: 2-D tensor with shape ``(batch, features)``.
+            columns: Column names for each feature.
+            dtypes: Target NumPy dtype per column.
+            categories: Per-column data category types.
+
+        Raises:
+            ValueError: If dimensions or lengths are inconsistent.
+
+        """
         self.from_numpy(data.cpu().numpy(), columns, dtypes, categories)
 
     # --- Conversion TO methods ---
     def to_pandas(self) -> tuple[pd.DataFrame, TabularDataContext]:
-        """Convert the TabularData to a pandas DataFrame."""
+        """Convert the TabularData to a pandas DataFrame.
+
+        Returns:
+            A tuple of ``(DataFrame, TabularDataContext)``.
+
+        Raises:
+            ValueError: If the data has not been initialized.
+
+        """
         if not self.is_initialized:
             raise ValueError("Data is not initialized yet.")
         if (
@@ -394,7 +492,16 @@ class TabularData(Data):
         )
 
     def to_numpy(self) -> tuple[np.ndarray, TabularDataContext]:
-        """Convert the TabularData to a numpy array, along with column names, dtypes, and categories."""
+        """Convert the TabularData to a NumPy array.
+
+        Returns:
+            A tuple of ``(ndarray, TabularDataContext)`` preserving column
+            metadata alongside the raw array.
+
+        Raises:
+            ValueError: If the data has not been initialized.
+
+        """
         if not self.is_initialized:
             raise ValueError("Data is not initialized yet.")
         if (
@@ -407,7 +514,16 @@ class TabularData(Data):
         )
 
     def to_tensor(self) -> tuple[torch.Tensor, TabularDataContext]:
-        """Convert the TabularData to a torch tensor, along with column names, dtypes, and categories."""
+        """Convert the TabularData to a PyTorch tensor.
+
+        Returns:
+            A tuple of ``(Tensor, TabularDataContext)`` preserving column
+            metadata alongside the raw tensor.
+
+        Raises:
+            ValueError: If the data has not been initialized.
+
+        """
         if not self.is_initialized:
             raise ValueError("Data is not initialized yet.")
         if (

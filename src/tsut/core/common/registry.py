@@ -33,10 +33,22 @@ class Registry(RegistryDisplayMixin):
         config_class_callable: type,
         **extra_fields: Any,
     ) -> None:
-        """Public register method.
+        """Register an entity with its class and config class.
+
+        This is the internal registration method used by subclasses to add
+        entries with a predefined schema (entity class + config class).
+
+        Args:
+            name: Unique name for the registry entry.
+            class_callable: The entity class to register.
+            config_class_callable: The associated configuration class.
+            **extra_fields: Arbitrary extra metadata stored alongside the entry.
+
+        Raises:
+            ValueError: If *name* is already registered.
 
         Example:
-            registry.register(
+            registry._register(
                 "resize",
                 ResizeMetric,
                 ResizeConfig,
@@ -82,6 +94,14 @@ class Registry(RegistryDisplayMixin):
         self._registry[name] = dict(fields)
 
     def unregister(self, name: str) -> None:
+        """Remove a previously registered entry.
+
+        Args:
+            name: The name of the entry to remove.
+
+        Raises:
+            ValueError: If *name* is not currently registered.
+        """
         if name not in self._registry:
             message = (
                 f"{self._entity.capitalize()} '{name}' is not registered. Cannot unregister a non-existent {self._entity}."
@@ -90,6 +110,17 @@ class Registry(RegistryDisplayMixin):
         del self._registry[name]
 
     def get(self, name: str) -> dict[str, Any]:
+        """Retrieve the metadata dict for a registered entry.
+
+        Args:
+            name: The name of the entry to look up.
+
+        Returns:
+            A dictionary of all fields stored for the entry.
+
+        Raises:
+            ValueError: If *name* is not registered.
+        """
         if name not in self._registry:
             message = (
                 f"{self._entity.capitalize()} '{name}' is not registered. Please register the {self._entity} before trying to retrieve it."
@@ -98,15 +129,19 @@ class Registry(RegistryDisplayMixin):
         return self._registry[name]
 
     def __getitem__(self, name: str) -> dict[str, Any]:
+        """Return the entry for *name*, delegating to :meth:`get`."""
         return self.get(name)
 
     def __contains__(self, name: str) -> bool:
+        """Check whether *name* is registered."""
         return name in self._registry
 
     def __len__(self) -> int:
+        """Return the number of registered entries."""
         return len(self._registry)
 
     def __iter__(self):
+        """Iterate over registered entry names."""
         return iter(self._registry)
 
     def __str__(self) -> str:
@@ -116,7 +151,9 @@ class Registry(RegistryDisplayMixin):
         return f"{self._entity.capitalize()}Registry(registry={self._registry})"
 
     def keys(self) -> list[str]:
+        """Return a list of all registered entry names."""
         return list(self._registry.keys())
 
     def items(self):
+        """Return all ``(name, fields)`` pairs in the registry."""
         return self._registry.items()

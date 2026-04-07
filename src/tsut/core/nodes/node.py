@@ -19,11 +19,25 @@ P = ParamSpec("P")
 
 
 class NodeMetadata(BaseModel):
-    """Metadata for a Node in a TSUT Pipeline."""
+    """Base metadata container for all node types in a TSUT Pipeline.
+
+    Subclasses (e.g., ModelMetadata, TransformMetadata) extend this to carry
+    node-type-specific metadata such as trainability flags.
+    """
 
 
 class NodeType(StrEnum):
-    """Define the types of Nodes available in a TSUT Pipeline."""
+    """Enumeration of node types available in a TSUT Pipeline.
+
+    Attributes:
+        BASE: Generic base node with no specialised behaviour.
+        SOURCE: Data source node that produces data for the pipeline.
+        SINK: Terminal node that consumes data without producing output.
+        TRANSFORM: Stateless or stateful data transformation node.
+        MODEL: Trainable model node (fit/predict pattern).
+        METRIC: Evaluation metric node (update/compute accumulator pattern).
+
+    """
 
     BASE = "base"
     SOURCE = "source"
@@ -34,21 +48,55 @@ class NodeType(StrEnum):
 
 
 class Port(BaseModel):
-    """Model of a port in a TSUT Node."""
+    """Describes an input or output port on a TSUT Node.
 
-    arr_type: ArrayLikeEnum  # The type of data array that this port accepts or outputs, e.g. pd.DataFrame, np.ndarray, etc.
+    Ports define the data contract between connected nodes in a pipeline,
+    specifying the expected array type, structure, category, and shape.
+
+    Attributes:
+        arr_type: Array backend this port accepts or produces (e.g. pandas DataFrame,
+            numpy ndarray).
+        data_structure: Logical data structure (e.g. tabular, time-series).
+            Defaults to ``DataStructureEnum.DATA``.
+        data_category: Semantic category of the data (e.g. numerical, categorical,
+            mixed).
+        data_shape: Shape descriptor for jaxtyping validation. See
+            https://docs.kidger.site/jaxtyping/api/array/#shape for the format.
+        optional: If ``True``, the port may be left unconnected in the pipeline
+            and the node must handle that gracefully. Defaults to ``False``.
+        desc: Human-readable description of this port's purpose.
+        mode: Pipeline execution modes in which this port is active.
+            Defaults to ``["all"]``.
+
+    """
+
+    arr_type: ArrayLikeEnum
     data_structure: DataStructureEnum = (
-        DataStructureEnum.DATA  # The data structure that this port accepts or outputs, e.g. TabularData, TimeSeriesData, etc.
+        DataStructureEnum.DATA
     )
-    data_category: DataCategoryEnum  # The category of data that this port accepts or outputs, e.g. "numerical", "categorical", "mixed", etc.
-    data_shape: str  # the shape of the data that this ports accepts or outputs for jaxtyping checking. Find the convention for the data shape string at https://docs.kidger.site/jaxtyping/api/array/#shape
-    optional: bool = False  # Whether this port is optional or not. Optional ports can be left unconnected in the pipeline, and the node should be able to handle that case gracefully (e.g., by using default values or by skipping certain computations).
+    data_category: DataCategoryEnum
+    data_shape: str
+    optional: bool = False
     desc: str
     mode: list[str] = ["all"]
 
 
 class NodeConfig(BaseModel):
-    """Configuration for a Node in a TSUT Pipeline."""
+    """Configuration for a Node in a TSUT Pipeline.
+
+    Each ``NodeConfig`` instance is assigned a unique UUID on creation so that
+    two nodes sharing identical configuration values are still considered
+    distinct entities inside a pipeline.
+
+    Attributes:
+        _id: Auto-generated UUID that uniquely identifies this config instance.
+        node_type: The type of node this config belongs to. Defaults to
+            ``NodeType.BASE``.
+        in_ports: Mapping of port names to ``Port`` definitions for inputs.
+        out_ports: Mapping of port names to ``Port`` definitions for outputs.
+        mixins_config: Per-mixin settings keyed by mixin name.
+
+    """
 
     _id: uuid.UUID = PrivateAttr(default_factory=uuid.uuid4)
     node_type: NodeType = NodeType.BASE
@@ -68,10 +116,24 @@ class NodeConfig(BaseModel):
 
 
 class MetaPostInitHook(ABCMeta):
-    """Metaclass to add an automatic call to a '__post_init__' method after '__init__'."""
+    """Metaclass that automatically invokes ``__post_init__`` after ``__init__``.
+
+    This mirrors the dataclass ``__post_init__`` pattern for regular classes.
+    Any class using this metaclass can define a ``__post_init__`` method that
+    will be called with the same arguments right after ``__init__`` completes.
+    """
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        """Add automatic call to 'post_init' hook after '__init__'."""
+        """Create an instance and call its ``__post_init__`` hook if defined.
+
+        Args:
+            *args: Positional arguments forwarded to ``__init__``.
+            **kwargs: Keyword arguments forwarded to ``__init__``.
+
+        Returns:
+            The fully initialised instance.
+
+        """
         # Before we do __new__ and __init__
         instance: object = super().__call__(*args, **kwargs)
         # After we do __post_init__
@@ -82,15 +144,32 @@ class MetaPostInitHook(ABCMeta):
 
 
 class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
-    """Base class for a Node in a TSUT Pipeline."""
+    """Base class for all nodes in a TSUT Pipeline.
+
+    A node is the atomic processing unit of a pipeline. It receives data on
+    its input ports, optionally fits internal state, and produces output on
+    its output ports.
+
+    The class is generic over four type parameters that define the data
+    contract:
+
+    * ``D_I`` -- data input type (e.g. ``pd.DataFrame``).
+    * ``D_C_I`` -- data context input type carrying metadata alongside input.
+    * ``D_O`` -- data output type.
+    * ``D_C_O`` -- data context output type.
+
+    Subclasses must implement :meth:`node_fit` and :meth:`node_transform`.
+    """
 
     _is_node: bool = True
     metadata = NodeMetadata()
 
     def __init__(self, *, config: NodeConfig) -> None:
-        """Initialize the Node with the given configuration.
+        """Initialise the Node with the given configuration.
 
-        The only common denomination across all Nodes are their input and output ports.
+        Args:
+            config: Node configuration defining ports, type, and mixins.
+
         """
         if not self._config:
             self._config = config
@@ -116,9 +195,16 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         return self._config
 
     def __init_subclass__(cls, *args: ParamSpec, **kwargs: ParamSpec) -> None:
-        """Ensure several things.
+        """Validate subclass definition and wrap its ``__init__``.
 
-        - That all subclasses of Node are placed before Mixin classes in the inheritance order. (To ensure proper initialization order).
+        Wraps ``__init__`` to extract the ``config`` kwarg early and validates
+        that Mixin classes appear *after* the Node base in the MRO to ensure
+        proper initialisation order.
+
+        Raises:
+            TypeError: If ``config`` is not passed as a keyword argument, or if
+                a Mixin class appears before the Node base in the inheritance list.
+
         """
         super().__init_subclass__(**kwargs)
 
@@ -148,10 +234,14 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
                 raise TypeError(message)
 
     def __post_init__(self, *, config=None) -> None:
-        """Define common post-initialization hook for all Nodes.
+        """Run common post-initialisation logic for all Nodes.
 
-        If 'config' is passed as kwarg, set it as the Node's '_config' attribute.
-        Ensure a call to super().init() with the proper args.
+        Propagates initialisation up the MRO so that Mixin ``__post_init__``
+        methods are called in the correct order.
+
+        Args:
+            config: Optional node configuration forwarded along the MRO chain.
+
         """
         try:
             super().__init__(config=config)  # type: ignore
@@ -171,19 +261,46 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
 
     @abstractmethod
     def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Define the base logic for fitting a Node with the given data. Can also be called with  no data to implement setup logic."""
+        """Fit the node's internal state using the provided data.
+
+        May also be called with empty data to perform setup logic (e.g. for
+        data-source nodes that establish connections).
+
+        Args:
+            data: Mapping of port name to ``(data, context)`` tuples.
+
+        """
         raise NotImplementedError
 
     @abstractmethod
     def node_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Define the base logic for transforming data through the Node."""
+        """Transform data through the node and produce output.
+
+        Args:
+            data: Mapping of port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
         raise NotImplementedError
 
     def node_fit_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Define the base logic for fitting and transforming data through the Node."""
+        """Fit the node then transform data in a single call.
+
+        Convenience method that calls :meth:`node_fit` followed by
+        :meth:`node_transform`.
+
+        Args:
+            data: Mapping of port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
         self.node_fit(data)
         return self.node_transform(data)

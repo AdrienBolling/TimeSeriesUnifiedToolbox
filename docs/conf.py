@@ -45,22 +45,11 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 autodoc_typehints = "description"
-autodoc_mock_imports = [
-    "torch",
-    "ray",
-    "mlflow",
-    "igraph",
-    "plotly",
-    "mplcursors",
-    "ipympl",
-    "iplotx",
-    "jaxtyping",
-    "torchmetrics",
-    "beartype",
-    "typeguard",
-    "scikit-learn",
-    "sklearn",
-]
+
+# Note: heavy dependencies (torch, ray, etc.) are installed in the dev
+# environment. We avoid mocking them because Python 3.13 type-alias
+# syntax (``type X = A | B``) is not compatible with mock objects.
+# In CI, the ``uv sync --group docs`` step installs the full package.
 
 # -- Intersphinx mapping -----------------------------------------------------
 

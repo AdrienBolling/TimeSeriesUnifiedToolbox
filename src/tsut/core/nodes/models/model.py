@@ -41,7 +41,21 @@ R = TypeVar("R", bound=ModelRunningConfig)
 
 
 class ModelConfig[H, R](NodeConfig):
-    """Base configuration for all Models in the TSUT Framework."""
+    """Base configuration for all Models in the TSUT Framework.
+
+    Generic over two type parameters:
+
+    * ``H`` -- a :class:`ModelHyperParameters` subclass holding tuneable
+      hyperparameters (e.g. learning rate, layer count).
+    * ``R`` -- a :class:`ModelRunningConfig` subclass holding runtime
+      execution parameters (e.g. backend, bootstrapping flags).
+
+    Attributes:
+        node_type: Always ``NodeType.MODEL``.
+        hyperparameters: Tuneable hyperparameters for this model.
+        running_config: Runtime execution parameters.
+
+    """
 
     node_type: NodeType = NodeType.MODEL
     hyperparameters: H
@@ -51,7 +65,15 @@ class ModelConfig[H, R](NodeConfig):
 class Model[D_I, D_C_I, D_O, D_C_O, P](
     Node[D_I, D_C_I, D_O, D_C_O], ABC
 ):  # Model is already implicitely an ABC via Node but explicit is better.
-    """Base class for all models in the TSUT Framework."""
+    """Base class for all models in the TSUT Framework.
+
+    Bridges the Node interface to a conventional ML fit/predict API:
+    :meth:`node_fit` delegates to :meth:`fit` and :meth:`node_transform`
+    delegates to :meth:`predict`.
+
+    The additional generic parameter ``P`` represents the type of the model's
+    learned parameters, accessible via :meth:`get_params` / :meth:`set_params`.
+    """
 
     metadata = ModelMetadata()
 
@@ -63,24 +85,47 @@ class Model[D_I, D_C_I, D_O, D_C_O, P](
 
     @abstractmethod
     def fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Fit the model with the given data."""
+        """Fit the model on the provided data.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        """
         ...
 
     @abstractmethod
     def predict(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Predict using the model with the given data."""
+        """Generate predictions from the fitted model.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
         ...
 
     @abstractmethod
     def get_params(self) -> P:
-        """Get the model parameters."""
+        """Return the model's current learned parameters.
+
+        Returns:
+            The learned parameters object of type ``P``.
+
+        """
         ...
 
     @abstractmethod
     def set_params(self, params: P) -> None:
-        """Set the model parameters."""
+        """Replace the model's learned parameters.
+
+        Args:
+            params: New parameters to set on the model.
+
+        """
         ...
 
     # --- API convenience ---
@@ -108,11 +153,24 @@ class Model[D_I, D_C_I, D_O, D_C_O, P](
     # --- Implementations for Node interface, don't touch without a very good reason ---
 
     def node_fit(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Override of the Node's fit method to call the Model's fit method."""
+        """Delegate to :meth:`fit`.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        """
         return self.fit(data=data)
 
     def node_transform(
         self, data: dict[str, tuple[D_I, D_C_I]]
     ) -> dict[str, tuple[D_O, D_C_O]]:
-        """Override of the Node's transform method to call the Model's predict method."""
+        """Delegate to :meth:`predict`.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
         return self.predict(data=data)

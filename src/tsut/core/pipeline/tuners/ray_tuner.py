@@ -27,10 +27,22 @@ class RayPipelineTunerConfig(BaseModel):
 
 
 class RayPipelineTuner:
-    """Ray Pipeline Tuner implementation for the TSUT Framework."""
+    """Hyperparameter tuner backed by Ray Tune.
+
+    Builds a trainable function from a pipeline configuration and delegates
+    the search to Ray Tune, converting metrics to a scalar objective.
+    """
 
     def __init__(self, pipeline: Pipeline, *, config: RayPipelineTunerConfig) -> None:
-        """Initialize the RayPipelineTuner with a pipeline and configuration."""
+        """Initialize the RayPipelineTuner.
+
+        Args:
+            pipeline: A pipeline whose config will be used as the base for
+                each trial.  The pipeline is compiled internally for
+                validation.
+            config: Tuner-level configuration.
+
+        """
         self._pipeline_config = pipeline.config  # We do this because this way the config will have been fully instantiated in the Pipeline
         self._config = config
         self._results_grid = None
@@ -47,10 +59,16 @@ class RayPipelineTuner:
         return self._tuner
 
     def default_hyperparameter_space(self) -> dict[str, Any]:
-        """Get the default hyperparameter space for tuning.
+        """Build the default hyperparameter space from all tunable nodes.
 
-        This method should return a dictionary where the keys are in the format "node_name/hp_name" and the values are Ray Tune compatible hyperparameter definitions. (e.g. tune.choice([1, 2, 3]), tune.uniform(0, 1), etc.)
-        The user can then modify this default hyperparameter space according to their needs before passing it to the "tune" method.
+        Keys follow the ``"node_name/hp_name"`` convention and values are
+        Ray Tune search-space objects (e.g. ``tune.choice``,
+        ``tune.uniform``).  The returned dict can be customised before
+        passing it to :meth:`tune`.
+
+        Returns:
+            Dict of ``{node_name/hp_name: ray_tune_definition}``.
+
         """
         hp_space = {}
         for node_name, node_obj in self._dummy_pipe.node_objects.items():
@@ -67,7 +85,25 @@ class RayPipelineTuner:
         tune_config: TuneConfig | None = None,
         run_config: RunConfig | None = None,
     ) -> None:
-        """Run the tuning process on the underlying pipeline runner."""
+        """Run the hyperparameter tuning process via Ray Tune.
+
+        Args:
+            param_space: Search space dict (``node_name/hp_name`` keys).
+            optimization_metric: Name of the single metric to optimise.
+                Mutually exclusive with *metric_aggregator* (one must be
+                provided).
+            metric_aggregator: Callable that reduces the full metrics dict
+                to a scalar.  Takes precedence over *optimization_metric*.
+            tune_config: Ray Tune :class:`TuneConfig`.  Defaults are used
+                when ``None``.
+            run_config: Ray Tune :class:`RunConfig`.  Defaults are used
+                when ``None``.
+
+        Raises:
+            ValueError: If neither *optimization_metric* nor
+                *metric_aggregator* is provided.
+
+        """
         if tune_config is None:
             tune_config = TuneConfig()
         if run_config is None:
@@ -89,7 +125,20 @@ class RayPipelineTuner:
         tuner.fit()
 
     def get_best(self, metric: str | None = None, mode: str = "max") -> dict[str, Any]:
-        """Get the best hyperparameters found during tuning."""
+        """Return the best result from the most recent tuning run.
+
+        Args:
+            metric: Metric name to rank by.  Defaults to
+                ``"optimization_metric"``.
+            mode: ``"max"`` or ``"min"``.
+
+        Returns:
+            The best :class:`ray.tune.Result` object.
+
+        Raises:
+            ValueError: If :meth:`tune` has not been called yet.
+
+        """
         if self._tuner is None:
             msg = "Tuning has not been run yet. Please run the tune() method first."
             raise ValueError(msg)
@@ -103,7 +152,17 @@ class RayPipelineTuner:
         optimization_metric: str | None = None,
         metric_aggregator: Callable[[dict[str, float]], float] | None = None,
     ) -> Callable[[dict], None]:
-        """Get the function to be used as the trainable for Ray Tune."""
+        """Build the trainable function passed to Ray Tune.
+
+        Args:
+            optimization_metric: Single metric name to extract.
+            metric_aggregator: Callable reducing all metrics to a scalar.
+
+        Returns:
+            A function ``(config: dict) -> None`` compatible with
+            :class:`ray.tune.Tuner`.
+
+        """
         fn = None
         if metric_aggregator is not None:
             fn = metric_aggregator
@@ -148,7 +207,15 @@ class RayPipelineTuner:
         return trainable
 
     def _convert_metrics(self, metrics: dict[str, TabularData]) -> dict[str, float]:
-        """Convert the metrics returned by the pipeline runner to a format that can be reported to Ray Tune."""
+        """Convert pipeline metrics to scalar floats for Ray Tune reporting.
+
+        Args:
+            metrics: Dict of metric node outputs as :class:`TabularData`.
+
+        Returns:
+            Dict mapping metric names to float values.
+
+        """
         # For now, we will just convert any Data/DataContext objects to their "data" attribute if they have one, or to their string representation if they don't. This is a very naive implementation and should be improved in the future.
         converted_metrics = {}
         for metric_name, metric_data in metrics.items():
@@ -158,7 +225,16 @@ class RayPipelineTuner:
         return converted_metrics
 
     def _convert_config(self, config: dict) -> PipelineConfig:
-        """Convert the config provided by Ray Tune to a PipelineConfig."""
+        """Convert a flat Ray Tune config dict into a :class:`PipelineConfig`.
+
+        Args:
+            config: Flat dict with ``"node_name/hp_name"`` keys and sampled
+                values.
+
+        Returns:
+            A :class:`PipelineConfig` with the hyperparameters applied.
+
+        """
         # We know that the config dict provided by Ray Tune will be a flat dict where the keys are the hyperparameters. We need to convert it to a PipelineConfig ourselves.
         # To build this hyperparameter_space, the user will have used self.default_hyperparameter_space() and then modified it according to their needs.
         # this default hp_dict is formated as follows :

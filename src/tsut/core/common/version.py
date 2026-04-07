@@ -1,3 +1,5 @@
+"""Version model for the TSUT library."""
+
 from pydantic import BaseModel
 
 class Version(BaseModel):

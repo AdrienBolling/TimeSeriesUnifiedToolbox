@@ -17,12 +17,23 @@ R = TypeVar("R", bound=MetricNodeRunningConfig)
 
 
 class MetricNodeConfig[R](NodeConfig):
-    """Configuration for a Metric Node in a TSUT Pipeline."""
+    """Configuration for a Metric Node in a TSUT Pipeline.
+
+    Generic over ``R``, which must be a :class:`MetricNodeRunningConfig`
+    subclass carrying metric-specific runtime parameters.
+
+    Attributes:
+        node_type: Always ``NodeType.METRIC``.
+        in_ports: Input port definitions for the metric node.
+        out_ports: Output port definitions for the metric node.
+        running_config: Optional runtime parameters for metric execution.
+
+    """
 
     node_type: NodeType = NodeType.METRIC
-    in_ports: dict[str, Port] = {}  # Define the input ports for the metric node
-    out_ports: dict[str, Port] = {}  # Define the output ports for the metric node
-    running_config: R | None = None  # Running configuration for the metric node
+    in_ports: dict[str, Port] = {}
+    out_ports: dict[str, Port] = {}
+    running_config: R | None = None
 
 
 class MetricNodeMetadata(NodeMetadata):
@@ -30,7 +41,12 @@ class MetricNodeMetadata(NodeMetadata):
 
 
 class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
-    """A Node wrapper for a Metric in a TSUT Pipeline."""
+    """Node wrapper for an accumulator-style metric in a TSUT Pipeline.
+
+    Metrics follow an **update/compute** pattern: :meth:`update` accumulates
+    state from incoming batches and :meth:`compute` produces the final result.
+    :meth:`node_transform` calls both in sequence.
+    """
 
     metadata = MetricNodeMetadata()
 
@@ -41,11 +57,21 @@ class MetricNode[D_I, D_C_I, D_O, D_C_O](Node[D_I, D_C_I, D_O, D_C_O]):
 
     @abstractmethod
     def update(self, data: dict[str, tuple[D_I, D_C_I]]) -> None:
-        """Update the metric with the given data."""
+        """Accumulate metric state from the given batch of data.
+
+        Args:
+            data: Mapping of input port name to ``(data, context)`` tuples.
+
+        """
 
     @abstractmethod
     def compute(self) -> dict[str, tuple[D_O, D_C_O]]:
-        """Compute the metric with the given data."""
+        """Compute and return the final metric value from accumulated state.
+
+        Returns:
+            Mapping of output port name to ``(data, context)`` tuples.
+
+        """
 
     # --- Node API override don't touch that ---
 

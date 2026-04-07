@@ -2,17 +2,17 @@
 
 Provides :class:`Logger`, a thin wrapper around :mod:`logging` that produces
 JSON-serializable log records suitable for database export.  The wrapper
-does **not** inherit from :class:`logging.Logger` — it delegates to one.
+does **not** inherit from :class:`logging.Logger` -- it delegates to one.
 
 Design principles
 -----------------
-* **Silent by default** – the ``tsut`` root logger ships with a
+* **Silent by default** - the ``tsut`` root logger ships with a
   :class:`logging.NullHandler`.  Users opt in by calling :func:`configure`
   or by attaching their own handler.
-* **Structured context** – every log record carries a JSON-serializable
+* **Structured context** - every log record carries a JSON-serializable
   ``context`` dict assembled from *bound* fields (via :meth:`Logger.bind`)
   and per-call *kwargs*.
-* **Library helpers** – convenience methods for recurring pipeline patterns
+* **Library helpers** - convenience methods for recurring pipeline patterns
   (node execution, phase transitions, data flow, fit completion).
 
 Standard kwargs
@@ -22,23 +22,23 @@ All kwargs are optional on every call.  They are merged into the record's
 
 Pipeline context (typically bound once per scope):
 
-* ``node_name``       – human name of the node, e.g. ``"RandomForestRegressor"``
-* ``node_type``       – :class:`~tsut.core.nodes.node.NodeType` value
-* ``pipeline_phase``  – :class:`~tsut.core.common.enums.NodeExecutionMode` value
-* ``port_name``       – port involved in the current operation
+* ``node_name``       - human name of the node, e.g. ``"RandomForestRegressor"``
+* ``node_type``       - :class:`~tsut.core.nodes.node.NodeType` value
+* ``pipeline_phase``  - :class:`~tsut.core.common.enums.NodeExecutionMode` value
+* ``port_name``       - port involved in the current operation
 
 Data context (useful between nodes, not enforced inside them):
 
-* ``data_structure``  – :class:`~tsut.core.common.data.data.DataStructureEnum` value
+* ``data_structure``  - :class:`~tsut.core.common.data.data.DataStructureEnum` value
   (e.g. ``"TabularData"``)
-* ``data_category``   – :class:`~tsut.core.common.data.data.DataCategoryEnum` value
+* ``data_category``   - :class:`~tsut.core.common.data.data.DataCategoryEnum` value
   (e.g. ``"numerical_data"``, ``"mixed_data"``)
-* ``data_shape``      – tuple or string describing the array shape
+* ``data_shape``      - tuple or string describing the array shape
 
 Operational:
 
-* ``duration_ms``     – wall-clock time in milliseconds
-* ``params``          – arbitrary JSON-serializable dict for extra data
+* ``duration_ms``     - wall-clock time in milliseconds
+* ``params``          - arbitrary JSON-serializable dict for extra data
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 # ---------------------------------------------------------------------------
-# Package-level NullHandler — keeps the library silent until the user
+# Package-level NullHandler -- keeps the library silent until the user
 # explicitly configures logging.
 # ---------------------------------------------------------------------------
 
@@ -69,28 +69,32 @@ class Logger:
     Wraps a standard :class:`logging.Logger` and enriches every record with
     a JSON-serializable ``context`` dict.
 
-    Parameters
-    ----------
-    name:
-        Dot-separated logger name (forwarded to :func:`logging.getLogger`).
-        Convention: ``"tsut.<module>"`` so that the ``tsut`` root logger
-        controls the entire library.
-    **context:
-        Initial bound context merged into every record produced by this
-        instance.  See *Standard kwargs* above.
+    Args:
+        name: Dot-separated logger name (forwarded to :func:`logging.getLogger`).
+            Convention: ``"tsut.<module>"`` so that the ``tsut`` root logger
+            controls the entire library.
+        **context: Initial bound context merged into every record produced by
+            this instance.  See *Standard kwargs* above.
 
-    Example
-    -------
-    >>> log = Logger("tsut.pipeline.runner", pipeline_phase="training")
-    >>> log.info("Pipeline started")
-    >>> node_log = log.bind(node_name="RandomForest", node_type="model")
-    >>> node_log.info("Fit complete", duration_ms=142.3)
+    Example:
+        >>> log = Logger("tsut.pipeline.runner", pipeline_phase="training")
+        >>> log.info("Pipeline started")
+        >>> node_log = log.bind(node_name="RandomForest", node_type="model")
+        >>> node_log.info("Fit complete", duration_ms=142.3)
 
     """
 
     __slots__ = ("_context", "_logger")
 
     def __init__(self, name: str, **context: Any) -> None:
+        """Create a new structured logger.
+
+        Args:
+            name: Dot-separated logger name forwarded to
+                :func:`logging.getLogger`.
+            **context: Initial bound context merged into every record.
+
+        """
         self._logger = logging.getLogger(name)
         self._context: dict[str, Any] = context
 
@@ -102,7 +106,7 @@ class Logger:
         """Return a **new** logger with *kwargs* merged into the bound context.
 
         The parent logger and its underlying :class:`logging.Logger` are
-        shared — only the context dict is copied and extended.
+        shared -- only the context dict is copied and extended.
         """
         merged = {**self._context, **kwargs}
         child = Logger.__new__(Logger)
@@ -169,14 +173,11 @@ class Logger:
     ) -> None:
         """Log that a node executed within a pipeline phase.
 
-        Parameters
-        ----------
-        node_name:
-            Human name of the node.
-        phase:
-            Execution phase (``"training"``, ``"inference"``, ``"evaluation"``).
-        duration_ms:
-            Wall-clock time in milliseconds (optional).
+        Args:
+            node_name: Human name of the node.
+            phase: Execution phase (``"training"``, ``"inference"``, ``"evaluation"``).
+            duration_ms: Wall-clock time in milliseconds. Defaults to ``None``.
+            **kwargs: Additional context merged into the log record.
 
         """
         extra: dict[str, Any] = {
@@ -196,12 +197,10 @@ class Logger:
     ) -> None:
         """Log a pipeline phase transition (start / end / error).
 
-        Parameters
-        ----------
-        phase:
-            Execution phase.
-        status:
-            ``"start"``, ``"end"``, or ``"error"``.
+        Args:
+            phase: Execution phase.
+            status: ``"start"``, ``"end"``, or ``"error"``.
+            **kwargs: Additional context merged into the log record.
 
         """
         self.info(
@@ -223,18 +222,13 @@ class Logger:
     ) -> None:
         """Log data moving between two nodes.
 
-        Parameters
-        ----------
-        source:
-            Name of the source node.
-        target:
-            Name of the target node.
-        data_structure:
-            E.g. ``"TabularData"``.
-        data_category:
-            E.g. ``"numerical_data"``, ``"mixed_data"``.
-        data_shape:
-            Shape of the data being transferred.
+        Args:
+            source: Name of the source node.
+            target: Name of the target node.
+            data_structure: E.g. ``"TabularData"``. Defaults to ``None``.
+            data_category: E.g. ``"numerical_data"``, ``"mixed_data"``. Defaults to ``None``.
+            data_shape: Shape of the data being transferred. Defaults to ``None``.
+            **kwargs: Additional context merged into the log record.
 
         """
         extra: dict[str, Any] = {"source": source, "target": target}
@@ -259,14 +253,12 @@ class Logger:
     ) -> None:
         """Log that a node completed fitting.
 
-        Parameters
-        ----------
-        node_name:
-            Human name of the node.
-        duration_ms:
-            Wall-clock time in milliseconds.
-        params_summary:
-            Optional summary of fitted parameters (must be JSON-serializable).
+        Args:
+            node_name: Human name of the node.
+            duration_ms: Wall-clock time in milliseconds. Defaults to ``None``.
+            params_summary: Optional summary of fitted parameters (must be
+                JSON-serializable). Defaults to ``None``.
+            **kwargs: Additional context merged into the log record.
 
         """
         extra: dict[str, Any] = {"node_name": node_name}
@@ -285,12 +277,10 @@ class Logger:
     ) -> None:
         """Log that a node is being called within a pipeline phase.
 
-        Parameters
-        ----------
-        node_name:
-            Human name of the node.
-        phase:
-            Execution phase (``"training"``, ``"inference"``, ``"evaluation"``).
+        Args:
+            node_name: Human name of the node.
+            phase: Execution phase (``"training"``, ``"inference"``, ``"evaluation"``).
+            **kwargs: Additional context merged into the log record.
 
         """
         extra: dict[str, Any] = {
@@ -343,24 +333,28 @@ class JSONFormatter(logging.Formatter):
     Each record is serialised as a JSON object with the following top-level
     keys:
 
-    * ``timestamp`` – ISO-8601 UTC string.
-    * ``level``     – log level name (``"DEBUG"``, ``"INFO"``, …).
-    * ``event``     – the human-readable message passed to the logging call.
-    * ``logger``    – dot-separated logger name.
-    * ``context``   – the merged context dict attached by :class:`Logger`.
+    * ``timestamp`` -ISO-8601 UTC string.
+    * ``level``     -log level name (``"DEBUG"``, ``"INFO"``, …).
+    * ``event``     - the human-readable message passed to the logging call.
+    * ``logger``    -dot-separated logger name.
+    * ``context``   - the merged context dict attached by :class:`Logger`.
 
     Non-serialisable values inside *context* are coerced to their ``repr()``.
 
-    Parameters
-    ----------
-    ensure_ascii:
-        Forwarded to :func:`json.dumps`.  ``False`` (default) allows
-        UTF-8 output; set to ``True`` if the downstream consumer expects
-        pure ASCII.
+    Args:
+        ensure_ascii: Forwarded to :func:`json.dumps`.  ``False`` (default)
+            allows UTF-8 output; set to ``True`` if the downstream consumer
+            expects pure ASCII.
 
     """
 
     def __init__(self, *, ensure_ascii: bool = False) -> None:
+        """Initialize the JSON formatter.
+
+        Args:
+            ensure_ascii: Forwarded to :func:`json.dumps`. Defaults to ``False``.
+
+        """
         super().__init__()
         self._ensure_ascii = ensure_ascii
 
@@ -404,14 +398,12 @@ class TextFormatter(logging.Formatter):
 
         12:34:56 INFO     [tsut.runner.smart] Phase training start  pipeline_name=My Pipeline phase_status=start
 
-    Parameters
-    ----------
-    show_timestamp:
-        Include an ``HH:MM:SS`` timestamp prefix.  ``True`` by default.
-    use_color:
-        Colorise the log level with ANSI codes.  ``True`` by default;
-        disable when piping to a file or on Windows terminals that do not
-        support ANSI.
+    Args:
+        show_timestamp: Include an ``HH:MM:SS`` timestamp prefix.
+            Defaults to ``True``.
+        use_color: Colorise the log level with ANSI codes.  Defaults to
+            ``True``; disable when piping to a file or on Windows terminals
+            that do not support ANSI.
 
     """
 
@@ -430,6 +422,13 @@ class TextFormatter(logging.Formatter):
         show_timestamp: bool = True,
         use_color: bool = True,
     ) -> None:
+        """Initialize the text formatter.
+
+        Args:
+            show_timestamp: Include a timestamp prefix. Defaults to ``True``.
+            use_color: Use ANSI colour codes. Defaults to ``True``.
+
+        """
         super().__init__()
         self._show_timestamp = show_timestamp
         self._use_color = use_color
@@ -469,7 +468,7 @@ class TextFormatter(logging.Formatter):
 # configure() convenience function
 # ---------------------------------------------------------------------------
 
-# Formatter types that configure() manages — used for idempotent cleanup.
+# Formatter types that configure() manages -- used for idempotent cleanup.
 _MANAGED_FORMATTERS = (JSONFormatter, TextFormatter)
 
 
@@ -487,56 +486,44 @@ def configure(
     """One-call setup for the ``tsut`` logging hierarchy.
 
     Attaches a formatter to the chosen handler and sets the log level on
-    the ``tsut`` root logger.  Can be called multiple times — each call
+    the ``tsut`` root logger.  Can be called multiple times -- each call
     only replaces the handler whose formatter matches *fmt*, so a text
     handler (stdout) and a JSON handler (file) can coexist.
 
-    Parameters
-    ----------
-    level:
-        Logging level (``logging.DEBUG``, ``"INFO"``, etc.).
-    filepath:
-        If given, logs are written to this file (append mode).
-    stream:
-        Writable stream (e.g. ``sys.stdout``).  Used when *filepath* is
-        ``None``.  Defaults to ``sys.stderr`` when both are ``None``.
-    fmt:
-        ``"json"`` for :class:`JSONFormatter` (default, suitable for
-        database export) or ``"text"`` for :class:`TextFormatter`
-        (human-readable, suitable for terminals and notebooks).
-    ensure_ascii:
-        Forwarded to :class:`JSONFormatter` (ignored when *fmt* is
-        ``"text"``).
-    show_timestamp:
-        Forwarded to :class:`TextFormatter` (ignored when *fmt* is
-        ``"json"``).
-    use_color:
-        Forwarded to :class:`TextFormatter` (ignored when *fmt* is
-        ``"json"``).
-    logger_name:
-        Name of the logger to configure.  Defaults to ``"tsut"`` (the
-        library root).
+    Args:
+        level: Logging level (``logging.DEBUG``, ``"INFO"``, etc.).
+        filepath: If given, logs are written to this file (append mode).
+        stream: Writable stream (e.g. ``sys.stdout``).  Used when *filepath*
+            is ``None``.  Defaults to ``sys.stderr`` when both are ``None``.
+        fmt: ``"json"`` for :class:`JSONFormatter` (default, suitable for
+            database export) or ``"text"`` for :class:`TextFormatter`
+            (human-readable, suitable for terminals and notebooks).
+        ensure_ascii: Forwarded to :class:`JSONFormatter` (ignored when *fmt*
+            is ``"text"``).
+        show_timestamp: Forwarded to :class:`TextFormatter` (ignored when
+            *fmt* is ``"json"``).
+        use_color: Forwarded to :class:`TextFormatter` (ignored when *fmt* is
+            ``"json"``).
+        logger_name: Name of the logger to configure.  Defaults to ``"tsut"``
+            (the library root).
 
-    Returns
-    -------
-    logging.Logger
-        The configured standard-library logger.
+    Returns:
+        The configured standard-library ``logging.Logger``.
 
-    Examples
-    --------
-    **Notebook / terminal** (human-readable to stdout):
+    Example:
+        **Notebook / terminal** (human-readable to stdout)::
 
-    >>> from tsut.core.common.logging import configure
-    >>> configure(level="DEBUG", stream=sys.stdout, fmt="text")
+            from tsut.core.common.logging import configure
+            configure(level="DEBUG", stream=sys.stdout, fmt="text")
 
-    **Log file** (JSON lines for database export):
+        **Log file** (JSON lines for database export)::
 
-    >>> configure(level="DEBUG", filepath="pipeline.log")
+            configure(level="DEBUG", filepath="pipeline.log")
 
-    **Both at the same time** (call twice — they don't conflict):
+        **Both at the same time** (call twice -- they don't conflict)::
 
-    >>> configure(level="DEBUG", stream=sys.stdout, fmt="text")
-    >>> configure(level="DEBUG", filepath="pipeline.log", fmt="json")
+            configure(level="DEBUG", stream=sys.stdout, fmt="text")
+            configure(level="DEBUG", filepath="pipeline.log", fmt="json")
 
     """
     root = logging.getLogger(logger_name)

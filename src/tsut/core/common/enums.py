@@ -1,10 +1,21 @@
+"""Enumerations shared across the TSUT framework."""
+
 from enum import Enum, StrEnum, auto
 
+
 class NodeExecutionMode(StrEnum):
-    """Define execution modes for nodes in the pipeline."""
+    """Execution modes that control when a pipeline node is invoked.
+
+    Members:
+        TRAINING: Node runs only during the training phase.
+        INFERENCE: Node runs only during the inference phase.
+        EVALUATION: Node runs only during the evaluation phase.
+        ALL: Node runs in every phase.
+        DEFAULT: Placeholder for an unset mode; raises an error if used at runtime.
+    """
 
     TRAINING = "training"
     INFERENCE = "inference"
     EVALUATION = "evaluation"
     ALL = "all"
-    DEFAULT = "default" # Placeholder for unset mode to raise errors if used without being set
+    DEFAULT = "default"

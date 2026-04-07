@@ -32,7 +32,20 @@ _ = Data  # For type checking purposes
 
 
 def decompile(method: Callable[..., Any]):  # noqa: ANN201
-    """Return a decorator that marks a method to decompile the pipeline on modification."""
+    """Mark a Pipeline method so that calling it resets the compiled state.
+
+    Any method decorated with ``@decompile`` will automatically set the
+    pipeline back to *uncompiled* after execution, forcing a re-compilation
+    before the next run.
+
+    Args:
+        method: The Pipeline method to wrap.
+
+    Returns:
+        A wrapper that calls *method* and then marks the pipeline as
+        uncompiled.
+
+    """
 
     @wraps(method)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
@@ -47,23 +60,48 @@ def decompile(method: Callable[..., Any]):  # noqa: ANN201
 
 
 class PipelineSettings(BaseSettings):
-    """Settings for a TSUT Pipeline."""
+    """Settings for a TSUT Pipeline.
+
+    Attributes:
+        autoprune: When ``True``, unconnected nodes are automatically removed
+            during compilation.
+
+    """
 
     autoprune: bool = True
 
 
 class Edge(BaseModel):
-    """Define a node-to-node connection in a Pipeline."""
+    """Define a node-to-node connection in a Pipeline.
+
+    Attributes:
+        source: Name of the source node.
+        target: Name of the target node.
+        ports_map: List of ``(source_port, target_port)`` tuples describing
+            which output port of the source feeds into which input port of
+            the target.  Ignored when the target is the Sink node.
+
+    """
 
     source: str
     target: str
     ports_map: list[
         tuple[str, str]
-    ]  # Mappings of (source port, target port), if the target is the Sink node these will be ignored
+    ]
 
 
 class PipelineConfig(BaseModel):
-    """Define the global configuration for a TSUT Pipeline (Not the layout)."""
+    """Define the global, user-facing configuration for a TSUT Pipeline.
+
+    Attributes:
+        nodes: Mapping of node names to ``(node_class_name, NodeConfig | None)``
+            tuples.  A ``None`` config causes the default config to be used.
+        edges: List of edges describing connections between nodes.
+        name: Human-readable pipeline name.
+        version: Semantic version of the pipeline.
+        settings: Pipeline-level settings (e.g. autoprune).
+
+    """
 
     nodes: Mapping[str, tuple[str, NodeConfig | None]] = {}
     edges: list[Edge] = []
@@ -75,10 +113,21 @@ class PipelineConfig(BaseModel):
 class _InternalPipelineConfig(BaseModel):
     """Internal configuration for a TSUT Pipeline.
 
-    This is used to store additional information that is not part of the user-facing PipelineConfig, such as the compiled graph structure.
+    Stores fully-instantiated node configs and edge data keyed by
+    ``(source, target)`` for fast lookup.  This is not part of the
+    user-facing API.
+
+    Attributes:
+        nodes: Mapping of node names to ``(node_class_name, NodeConfig)``
+            tuples.  All configs are guaranteed to be fully instantiated.
+        edges: Edges keyed by ``(source_name, target_name)`` for O(1)
+            lookup.
+        name: Human-readable pipeline name.
+        version: Semantic version of the pipeline.
+        settings: Pipeline-level settings.
+
     """
 
-    # Compiled graph structure
     nodes: dict[str, tuple[str, NodeConfig]] = {}
     edges: dict[tuple[str, str], Edge] = {}
     name: str = "My Pipeline"
@@ -99,15 +148,13 @@ class Pipeline:
     ) -> None:
         """Initialize the Pipeline with the given configuration.
 
-        Description:
-            More often than not, pipelines will be either initiliazed with no nodes/edges, and will be built programmatically or loaded from a file later. In such cases, the default empty PipelineConfig will be used.
-            Compile the pipeline before using it to effectively initialize all nodes.
+        Pipelines are typically created empty and built programmatically, or
+        loaded from a saved config.  Call :meth:`compile` before running the
+        pipeline to instantiate all node objects.
 
         Args:
-            config (PipelineConfig, optional): Global configuration for the pipeline.
-
-        Returns:
-            None
+            config: Global configuration for the pipeline.  When ``None``,
+                an empty :class:`PipelineConfig` is used.
 
         """
         # Initialize the pipeline internals
@@ -211,6 +258,8 @@ class Pipeline:
 
     @property
     def graph_wo_metrics(self) -> nx.DiGraph:
+        """Return a filtered graph view excluding metric nodes and their edges."""
+
         def filter_nodes(node_name: str) -> bool:
             node_type, _ = self._config.nodes[node_name]
             return node_type != NodeType.METRIC
@@ -233,7 +282,20 @@ class Pipeline:
     def add_node(
         self, node_name: str, node_type: str, node_config: NodeConfig | None = None
     ) -> None:
-        """Add a node to the pipeline."""
+        """Add a node to the pipeline.
+
+        Args:
+            node_name: Unique name for the node within this pipeline.
+            node_type: Registered node class name (looked up in the node
+                registry).
+            node_config: Optional configuration.  When ``None``, the default
+                config for *node_type* is used.
+
+        Raises:
+            ValueError: If *node_name* already exists or a second Sink node
+                is added.
+
+        """
         if node_name in self._config.nodes:
             message = f"Node '{node_name}' already exists in the pipeline."
             raise ValueError(message)
@@ -248,7 +310,15 @@ class Pipeline:
         self._add_node_to_nx(node_name)
 
     def remove_node(self, node_name: str) -> None:
-        """Remove a node from the pipeline."""
+        """Remove a node and all its connected edges from the pipeline.
+
+        Args:
+            node_name: Name of the node to remove.
+
+        Raises:
+            ValueError: If *node_name* does not exist.
+
+        """
         if node_name not in self._config.nodes:
             message = f"Node '{node_name}' does not exist in the pipeline."
             raise ValueError(message)
@@ -264,7 +334,16 @@ class Pipeline:
         self._remove_node_from_nx(node_name)
 
     def update_node(self, node_name: str, node_config: NodeConfig) -> None:
-        """Update a node's configuration in the pipeline."""
+        """Update a node's configuration in the pipeline.
+
+        Args:
+            node_name: Name of the existing node to update.
+            node_config: New configuration to assign to the node.
+
+        Raises:
+            ValueError: If *node_name* does not exist.
+
+        """
         if node_name not in self._config.nodes:
             message = f"Node '{node_name}' does not exist in the pipeline."
             raise ValueError(message)
@@ -273,7 +352,19 @@ class Pipeline:
         self._config.nodes[node_name] = (node_type, node_config)
 
     def add_edge(self, edge: Edge) -> None:
-        """Add an edge to the pipeline."""
+        """Add an edge to the pipeline.
+
+        If an edge between the same source and target already exists, the
+        port mappings are merged (duplicates removed).
+
+        Args:
+            edge: The edge to add.
+
+        Raises:
+            ValueError: If the edge originates from the Sink node or fails
+                validation.
+
+        """
         # Validate the edge before adding it to the pipeline
         self._validate_edge(
             edge
@@ -299,7 +390,16 @@ class Pipeline:
             self._add_edge_to_nx(edge)
 
     def remove_edge(self, source: str, target: str) -> None:
-        """Remove an edge from the pipeline."""
+        """Remove an edge from the pipeline.
+
+        Args:
+            source: Name of the source node.
+            target: Name of the target node.
+
+        Raises:
+            ValueError: If the edge does not exist.
+
+        """
         if (source, target) not in self._config.edges:
             message = (
                 f"Edge from '{source}' to '{target}' does not exist in the pipeline."
@@ -314,7 +414,16 @@ class Pipeline:
         self._remove_edge_from_nx(Edge(source=source, target=target, ports_map=[]))
 
     def update_edge(self, edge: Edge) -> None:
-        """Update an edge's ports_map in the pipeline."""
+        """Update an edge's ports_map in the pipeline.
+
+        Args:
+            edge: Edge with the updated ``ports_map``.  The ``source`` and
+                ``target`` fields identify the existing edge to update.
+
+        Raises:
+            ValueError: If the edge does not exist.
+
+        """
         if (edge.source, edge.target) not in self._config.edges:
             message = f"Edge from '{edge.source}' to '{edge.target}' does not exist in the pipeline."
             raise ValueError(message)
@@ -328,7 +437,13 @@ class Pipeline:
         self._update_edge_in_nx(edge)
 
     def compile(self) -> None:
-        """Compile the pipeline by instantiating all node objects and validating the graph structure."""
+        """Compile the pipeline by instantiating all node objects and validating the graph structure.
+
+        Raises:
+            ValueError: If the pipeline is already compiled or validation
+                fails (e.g. missing Sink node, cycles, incompatible ports).
+
+        """
         if self.compiled:
             message = "Pipeline is already compiled."
             raise ValueError(message)
@@ -336,21 +451,52 @@ class Pipeline:
 
     ## --- Public API for getters ---
     def get_node_config(self, node_name: str) -> NodeConfig:
-        """Get a node's configuration from the pipeline."""
+        """Get a node's configuration from the pipeline.
+
+        Args:
+            node_name: Name of the node.
+
+        Returns:
+            The :class:`NodeConfig` associated with *node_name*.
+
+        Raises:
+            ValueError: If *node_name* does not exist.
+
+        """
         if node_name not in self._config.nodes:
             message = f"Node '{node_name}' does not exist in the pipeline."
             raise ValueError(message)
         return self._config.nodes[node_name][1]
 
     def get_validated_sink_node_name(self) -> str:
-        """Get the name of the sink node in the pipeline, if it exists. Raise an error if the sink node is not properly configured."""
+        """Get the name of the sink node, raising if none is configured.
+
+        Returns:
+            The sink node name.
+
+        Raises:
+            ValueError: If no Sink node exists in the pipeline.
+
+        """
         if self.sink_node_name is None:
             message = "No Sink node found in the pipeline. A pipeline must have one Sink node to be valid."
             raise ValueError(message)
         return self.sink_node_name
 
     def get_edge(self, source: str, target: str) -> Edge:
-        """Get an edge's configuration from the pipeline."""
+        """Get an edge's configuration from the pipeline.
+
+        Args:
+            source: Name of the source node.
+            target: Name of the target node.
+
+        Returns:
+            The :class:`Edge` between *source* and *target*.
+
+        Raises:
+            ValueError: If the edge does not exist.
+
+        """
         if (source, target) not in self._config.edges:
             message = (
                 f"Edge from '{source}' to '{target}' does not exist in the pipeline."
@@ -359,7 +505,12 @@ class Pipeline:
         return self._config.edges[(source, target)]
 
     def get_source_node_names(self) -> list[str]:
-        """Get the list of source node names in the pipeline."""
+        """Get the names of all source nodes in the pipeline.
+
+        Returns:
+            List of node names whose type is :attr:`NodeType.SOURCE`.
+
+        """
         source_node_names = []
         for node_name, (_, node_config) in self._config.nodes.items():
             if node_config.node_type == NodeType.SOURCE:
@@ -367,7 +518,12 @@ class Pipeline:
         return source_node_names
 
     def get_metric_node_names(self) -> list[str]:
-        """Get the list of metric node names in the pipeline."""
+        """Get the names of all metric nodes in the pipeline.
+
+        Returns:
+            List of node names whose type is :attr:`NodeType.METRIC`.
+
+        """
         metric_node_names = []
         for node_name, (_, node_config) in self._config.nodes.items():
             if node_config.node_type == NodeType.METRIC:
@@ -376,7 +532,12 @@ class Pipeline:
 
     ## --- Public API for params management ---
     def get_params(self) -> dict[str, Any]:
-        """Get the parameters of all nodes in the pipeline, for all nodes that have parameters."""
+        """Get the parameters of all parameterised nodes in the pipeline.
+
+        Returns:
+            Dict mapping node names to their parameter dicts.
+
+        """
         return {
             node_name: node_object.get_params()
             for node_name, node_object in self.node_objects.items()
@@ -384,7 +545,16 @@ class Pipeline:
         }
 
     def set_params(self, params: dict[str, dict[str, Any]]) -> None:
-        """Set the parameters of all nodes in the pipeline, for all nodes that have parameters."""
+        """Set node parameters from a nested dict.
+
+        Args:
+            params: Mapping of ``{node_name: {param_name: value}}``.
+
+        Raises:
+            ValueError: If a node does not exist or does not support
+                parameters.
+
+        """
         for node_name, node_params in params.items():
             if node_name not in self.node_objects:
                 message = f"Node '{node_name}' does not exist in the pipeline. Cannot set parameters for non-existing node."
@@ -396,14 +566,24 @@ class Pipeline:
             node_object.set_params(node_params)
 
     def save_params_to_dir(self, dir_path: str) -> None:
-        """Save the parameters of all nodes in the pipeline to a directory."""
+        """Save all node parameters to a JSON file in the given directory.
+
+        Args:
+            dir_path: Directory in which the JSON file will be written.
+
+        """
         params = self.get_params()
         file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
         with Path(file_name).open("w") as f:
             json.dump(params, f)
 
     def load_params_from_dir(self, dir_path: str) -> None:
-        """Load the parameters of all nodes in the pipeline from a directory."""
+        """Load node parameters from a previously saved JSON file.
+
+        Args:
+            dir_path: Directory containing the parameter JSON file.
+
+        """
         file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
         with Path(file_name).open("r") as f:
             params = json.load(f)
@@ -412,16 +592,17 @@ class Pipeline:
     #### Internal methods ####
     # --- Internal methods for pipeline management ---
     def _full_init_config(self, config: PipelineConfig) -> _InternalPipelineConfig:
-        """Fully instantiate the given PipelineConfig.
+        """Convert a user-facing :class:`PipelineConfig` into an internal one.
 
-        This method ensures that all NodeConfig instances in the PipelineConfig are fully instantiated, which is necessary for proper validation and type checking.
-        The key difference usually lies in the fact that all NodeConfig will be fully instantiated.
+        Ensures every :class:`NodeConfig` is fully instantiated (defaults
+        filled in) and edges are keyed by ``(source, target)`` for fast
+        lookup.
 
         Args:
-            config (PipelineConfig): The PipelineConfig to fully instantiate.
+            config: The user-provided pipeline configuration.
 
         Returns:
-            _InternalPipelineConfig: The fully instantiated _InternalPipelineConfig.
+            A fully instantiated :class:`_InternalPipelineConfig`.
 
         """
         fully_instantiated_nodes = self._full_init_node_configs(config.nodes)
@@ -478,7 +659,15 @@ class Pipeline:
     def _full_init_node_configs(
         self, nodes: Mapping[str, tuple[str, NodeConfig | None]]
     ) -> dict[str, tuple[str, NodeConfig]]:
-        """Fully instantiate all NodeConfig instances in the given nodes dictionary."""
+        """Ensure every node has a fully instantiated :class:`NodeConfig`.
+
+        Args:
+            nodes: Raw node mapping from the user config.
+
+        Returns:
+            A new dict with ``None`` configs replaced by defaults.
+
+        """
         fully_instantiated_nodes = {}
         for node_name, (node_type, node_config) in nodes.items():
             if node_config is not None:
@@ -490,7 +679,12 @@ class Pipeline:
         return fully_instantiated_nodes
 
     def _get_default_node_config(self, node_class_name: str) -> NodeConfig:
-        """Get a default NodeConfig instance based on the given node_class_name."""
+        """Return a default :class:`NodeConfig` for the given registered class name.
+
+        Args:
+            node_class_name: Registered node class name.
+
+        """
         node_conf_class = NODE_REGISTRY.get_node_config_class(node_class_name)
         return node_conf_class()
 
@@ -605,16 +799,17 @@ class Pipeline:
             raise ValueError(message)
 
     def _validate_edge(self, edge: Edge) -> None:
-        """Validate an edge's configuration and compatibility with the source and target nodes.
+        """Validate an edge's configuration and port compatibility.
 
-        This method checks for issues such as:
-        - Existence of source and target nodes in the pipeline
-        - Validity of ports_map (source ports should exist in the source node, target ports should exist in the target node, etc.)
-        - Compatibility of data types between source and target ports
-        - Check that no edge originates from the Sink node
+        Checks performed:
+        - Source and target nodes exist in the pipeline.
+        - All ports in ``ports_map`` exist on their respective nodes.
+        - Data structures and categories are compatible between ports.
+        - Execution modes of connected ports are compatible.
+        - No edge originates from the Sink node.
 
         Args:
-            edge (Edge): The edge to validate.
+            edge: The edge to validate.
 
         Raises:
             ValueError: If any validation check fails.
@@ -771,14 +966,15 @@ class Pipeline:
         self._compiled = False
 
     def _compile(self) -> None:
-        """Signals the Pipeline is fit for running.
+        """Perform the full compilation sequence.
 
-        This function runs :
-        - clearing of the previous node instances
-        - pruning if needed
-        - validation of the layout
-        - instantiation of the nodes
-        - instantation of the true sink ports
+        Steps executed in order:
+
+        1. Clear previous node instances.
+        2. Prune unconnected nodes (if ``autoprune`` is enabled).
+        3. Validate the graph layout.
+        4. Instantiate all node objects.
+
         """
         log = _log.bind(pipeline_name=self.name)
         log.log_phase("compilation", "start")
@@ -817,7 +1013,18 @@ class Pipeline:
         backend: str = "plotly",
         figsize: tuple[int, int] = (12, 8),
     ):
-        """Render the pipeline graph using the specified backend."""
+        """Render the pipeline graph and display it interactively.
+
+        Args:
+            title: Figure title.  Defaults to ``"Pipeline: <name>"``.
+            backend: Rendering backend.  Currently only ``"plotly"`` is
+                supported.
+            figsize: ``(width, height)`` of the figure in inches.
+
+        Raises:
+            ValueError: If *backend* is not supported.
+
+        """
         if title is None:
             title = f"Pipeline: {self.name}"
         if backend == "plotly":
@@ -837,7 +1044,23 @@ class Pipeline:
         *,
         full_html: bool = True,
     ) -> str:
-        """Render the pipeline graph to an HTML string using the specified backend."""
+        """Render the pipeline graph and return it as an HTML string.
+
+        Args:
+            title: Figure title.  Defaults to ``"Pipeline: <name>"``.
+            backend: Rendering backend.  Currently only ``"plotly"`` is
+                supported.
+            figsize: ``(width, height)`` of the figure in inches.
+            full_html: When ``True``, return a self-contained HTML document;
+                otherwise return only the ``<div>`` fragment.
+
+        Returns:
+            HTML string of the rendered graph.
+
+        Raises:
+            ValueError: If *backend* is not supported.
+
+        """
         if title is None:
             title = f"Pipeline: {self.name}"
         if backend == "plotly":
