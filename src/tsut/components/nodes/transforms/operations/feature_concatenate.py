@@ -1,9 +1,19 @@
-"""FeatureConcatenate operation node, which concatenates the features of two input dataframes along the column axis (features)."""
+"""FeatureConcatenate transform node for the TSUT Framework.
+
+Concatenates two DataFrames along the column axis (feature dimension).
+Duplicate column names across the two inputs are rejected to prevent
+silent data corruption.
+"""
 
 import pandas as pd
+from pydantic import Field
 
-from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
-from tsut.core.common.data.tabular_data import TabularDataContext
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
+)
 from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
@@ -15,77 +25,156 @@ from tsut.core.nodes.transform.transform import (
 
 
 class FeatureConcatenateMetadata(TransformMetadata):
-    """Metadata for the FeatureConcatenate TransformNode in a TSUT Pipeline."""
+    """Metadata for the FeatureConcatenate node."""
 
     node_name: str = "FeatureConcatenate"
-    input_type: str = "pd.DataFrame"
-    output_type: str = "pd.DataFrame"
-    description: str = "Concatenate multiple DataFrames along the column axis (features)."
-    trainable: bool = False  # This transform is not trainable, since it does not learn any parameters from the data. It simply applies a deterministic operation to the input data.
+    description: str = (
+        "Concatenate two DataFrames column-wise (feature axis). "
+        "Duplicate column names across the two inputs are rejected."
+    )
+    trainable: bool = False
+
 
 class FeatureConcatenateRunningConfig(TransformRunningConfig):
-    """Running configuration for the FeatureConcatenate TransformNode in the TSUT Framework.
+    """Run-time options for feature concatenation."""
 
-    This will usually be used for execution parameters that are not relevant for the definition of the transform itself, rather for how to run it.
-    For example, in some transforms, this could be very specific parameters such as the backend to use for computations etc.
-    """
+    check_row_count: bool = Field(
+        default=True,
+        description=(
+            "When ``True`` (default), raise if the two inputs have different "
+            "numbers of rows. Set to ``False`` to allow unequal row counts — "
+            "pandas will fill missing positions with ``NaN``."
+        ),
+    )
 
-    matching_number_samples: bool = True  # Whether to check that the number of samples (rows) in the input DataFrames are the same before concatenating. If True, an error will be raised if the number of samples do not match. If False, the concatenation will be performed without checking, which may result in NaN values for the missing samples in the shorter DataFrame.
 
 class FeatureConcatenateHyperParameters(TransformHyperParameters):
-    """Hyperparameters for the FeatureConcatenate TransformNode in the TSUT Framework.
+    """No learnable hyperparameters."""
 
-    This will usually be used for parameters that are relevant for the definition of the transform itself, and that are relevant to be tuned during hyperparameter tuning.
-    For example, in some transforms, this could be the window size for a rolling window transform, etc.
+
+class FeatureConcatenateConfig(
+    TransformConfig[
+        FeatureConcatenateRunningConfig,
+        FeatureConcatenateHyperParameters,
+    ]
+):
+    """Full configuration for the FeatureConcatenate node."""
+
+    hyperparameters: FeatureConcatenateHyperParameters = Field(
+        default_factory=FeatureConcatenateHyperParameters,
+        description="No tuneable hyperparameters for this node.",
+    )
+    running_config: FeatureConcatenateRunningConfig = Field(
+        default_factory=FeatureConcatenateRunningConfig,
+        description="Run-time options (check_row_count).",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "input_1": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch feature1",
+                desc="First DataFrame (batch × feature1).",
+            ),
+            "input_2": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch feature2",
+                desc="Second DataFrame (batch × feature2).",
+            ),
+        },
+        description="Input ports: 'input_1' and 'input_2' (DataFrames to concatenate).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch _",
+                desc="Column-concatenated DataFrame (batch × (feature1+feature2)).",
+            ),
+        },
+        description="Output ports: 'output' (concatenated DataFrame).",
+    )
+
+
+class FeatureConcatenate(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        None,
+    ]
+):
+    """Concatenate two DataFrames along the column axis.
+
+    The output :class:`~tsut.core.common.data.data.TabularDataContext` is
+    built by merging the two input contexts in order
+    (``input_1`` columns first, then ``input_2`` columns).
+
+    **Duplicate column guard** – if both inputs share any column name the
+    operation raises a ``ValueError`` rather than silently producing
+    ambiguous columns.
+
+    **Row-count check** – controlled by
+    ``running_config.check_row_count`` (enabled by default).
     """
-
-class FeatureConcatenateConfig(TransformConfig[FeatureConcatenateRunningConfig, FeatureConcatenateHyperParameters]):
-    """Configuration for the FeatureConcatenate TransformNode in the TSUT Framework."""
-
-    running_config: FeatureConcatenateRunningConfig = FeatureConcatenateRunningConfig()
-    hyperparameters: FeatureConcatenateHyperParameters = FeatureConcatenateHyperParameters()
-    in_ports: dict[str, Port] = {"input_1": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch feature1", desc="First input DataFrame to concatenate"), "input_2": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch feature2", desc="Second input DataFrame to concatenate")}
-    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch feature1+feature2" if running_config.matching_number_samples else "_ feature1+feature2", desc="Concatenated output DataFrame")}
-
-class FeatureConcatenate(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, None]):
-    """Node that concatenates multiple DataFrames along the column axis (features)."""
 
     metadata = FeatureConcatenateMetadata()
 
-    def __init__(self, *, config: TransformConfig) -> None:
-        """Initialize the FeatureConcatenateNode with the given configuration."""
+    def __init__(self, *, config: FeatureConcatenateConfig) -> None:
         self._config = config
 
+    # --- TransformNode interface ------------------------------------------
+
     def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Don't fit.
+        """Validate inputs at fit time (no parameters to learn)."""
+        df1, _ = data["input_1"]
+        df2, _ = data["input_2"]
+        self._assert_inputs_valid(df1, df2)
 
-        Since it does not learn any parameters from the data. It simply applies a deterministic operation to the input data.
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+        """Concatenate the two DataFrames column-wise.
+
+        Parameters
+        ----------
+        data:
+            Must contain keys ``"input_1"`` and ``"input_2"``.
+
         """
-
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Concatenate the input DataFrames along the column axis (features)."""
         df1, ctx1 = data["input_1"]
         df2, ctx2 = data["input_2"]
+        self._assert_inputs_valid(df1, df2)
 
-        if self._config.running_config.matching_number_samples and df1.shape[0] != df2.shape[0]:
-            raise ValueError(f"Number of samples (rows) in the input DataFrames do not match: {df1.shape[0]} vs {df2.shape[0]}. Set matching_number_samples to False in the running config to concatenate without checking.")
-
-        concatenated_df = pd.concat([df1, df2], axis=1)
-
-        # Concatenate the contexts.
-        output_ctx = self._concatenate_contexts(ctx1, ctx2)
-
-        return {"output": (concatenated_df, output_ctx)}
-
-    # --- Internal helper methods ---
-
-    def _concatenate_contexts(self, ctx1: TabularDataContext, ctx2: TabularDataContext) -> TabularDataContext:
-        """Concatenate the contexts of the input DataFrames.
-
-        This is a simple implementation that assumes that the contexts are compatible and can be concatenated by simply merging their metadata. In a more complex implementation, you may want to add checks for compatibility and handle conflicts in the metadata (e.g., if both contexts have a "feature_types" metadata, you may want to check that they are compatible and merge them accordingly).
-        """
-        return TabularDataContext(
-            columns= ctx1.columns + ctx2.columns,
-            dtypes= ctx1.dtypes + ctx2.dtypes,
-            categories= ctx1.categories + ctx2.categories,
+        concatenated = pd.concat([df1, df2], axis=1)
+        output_ctx = TabularDataContext(
+            columns=ctx1.columns + ctx2.columns,
+            dtypes=ctx1.dtypes + ctx2.dtypes,
+            categories=ctx1.categories + ctx2.categories,
         )
+        return {"output": (concatenated, output_ctx)}
+
+    # --- Private helpers --------------------------------------------------
+
+    def _assert_inputs_valid(self, df1: pd.DataFrame, df2: pd.DataFrame) -> None:
+        """Raise ``ValueError`` on duplicate columns or row-count mismatch."""
+        duplicates = set(df1.columns) & set(df2.columns)
+        if duplicates:
+            msg = (
+                f"FeatureConcatenate: duplicate column names across inputs: "
+                f"{sorted(duplicates)}. Rename columns before concatenating."
+            )
+            raise ValueError(msg)
+        if self._config.running_config.check_row_count and df1.shape[0] != df2.shape[0]:
+            msg = (
+                f"FeatureConcatenate: row-count mismatch between inputs: "
+                f"{df1.shape[0]} vs {df2.shape[0]}. "
+                "Set running_config.check_row_count=False to allow this."
+            )
+            raise ValueError(msg)

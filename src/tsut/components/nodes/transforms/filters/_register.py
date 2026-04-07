@@ -1,18 +1,34 @@
-"""Module for registering filter nodes in the TSUT Framework."""
+"""Register outlier-filter transform nodes from this package into the NODE_REGISTRY."""
 
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
-from .outlier_filter import (
-    OutlierFilterConfig,
-    OutlierFilter,
+
+from .iqr_outlier_filter import (
+    IQROutlierFilter,
+    IQROutlierFilterConfig,
+    IQROutlierFilterHyperParameters,
+    IQROutlierFilterRunningConfig,
+)
+from .zscore_outlier_filter import (
+    ZScoreOutlierFilter,
+    ZScoreOutlierFilterConfig,
+    ZScoreOutlierFilterHyperParameters,
+    ZScoreOutlierFilterRunningConfig,
 )
 
-# --- Registering the nodes in the registry ---
-# Do this for all the nodes defined in this module, so that they can be easily accessed
 
 def register_nodes() -> None:
-    """Register all filter nodes defined in this module to the NODE_REGISTRY."""
+    """Register all outlier-filter nodes defined in this package."""
     NODE_REGISTRY.register(
-        "OutlierFilter",
-        OutlierFilter,
-        OutlierFilterConfig,
+        name="ZScoreOutlierFilter",
+        node_class=ZScoreOutlierFilter,
+        node_config_class=ZScoreOutlierFilterConfig,
+        running_config_class=ZScoreOutlierFilterRunningConfig,
+        hyperparameters_class=ZScoreOutlierFilterHyperParameters,
+    )
+    NODE_REGISTRY.register(
+        name="IQROutlierFilter",
+        node_class=IQROutlierFilter,
+        node_config_class=IQROutlierFilterConfig,
+        running_config_class=IQROutlierFilterRunningConfig,
+        hyperparameters_class=IQROutlierFilterHyperParameters,
     )

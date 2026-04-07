@@ -1,9 +1,37 @@
-"""Correlation Feature Filter Node module."""
-import pandas as pd
+"""CorrelationFilter transform node for the TSUT Framework.
 
-from tsut.components.utils.dataframe import filter_columns, filter_dtypes
-from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
-from tsut.core.common.data.tabular_data import TabularDataContext
+Removes highly correlated features by computing a pair-wise correlation
+matrix during :meth:`fit` and greedily dropping one column from every pair
+whose absolute correlation exceeds a configurable threshold.
+
+The greedy strategy iterates columns left-to-right and marks a column for
+removal the first time it correlates above the threshold with a column that
+has not already been marked.  This is equivalent to scikit-learn's
+variance-inflation heuristic and preserves the *first* feature in every
+correlated group.
+
+* Input  – a ``(batch, feature)`` **numerical** DataFrame.
+* Output – the same DataFrame with redundant features removed.
+
+Implemented with numpy (``np.corrcoef``) for Pearson, or delegates to
+``scipy.stats.spearmanr`` / ``scipy.stats.kendalltau`` for rank-based
+methods.
+"""
+
+from copy import deepcopy
+from typing import Any, Literal
+
+import numpy as np
+import pandas as pd
+from pydantic import Field
+
+from tsut.components.utils.dataframe import filter_columns
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
+)
 from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
@@ -13,80 +41,267 @@ from tsut.core.nodes.transform.transform import (
     TransformRunningConfig,
 )
 
+# Serialisable params: list of column names that survived the filter.
+type _CorrelationFilterParams = dict[str, list[str]]
+
 
 class CorrelationFilterMetadata(TransformMetadata):
-    """Metadata for the CorrelationFilter Node."""
+    """Metadata for the CorrelationFilter node."""
 
-    node_name: str = "Correlation Feature Filter"
-    input_type: str ="pd.DataFrame"
-    output_type: str ="pd.DataFrame"
-    description: str ="Filters out features with high correlation to other features."
+    node_name: str = "CorrelationFilter"
+    description: str = (
+        "Remove highly correlated numerical features. "
+        "Keeps only one column from every correlated pair above the threshold."
+    )
+
 
 class CorrelationFilterRunningConfig(TransformRunningConfig):
-    """Runniong config for the Correlation Filter Node."""
+    """Run-time knobs that do not affect the learned parameters."""
 
-    filtering_columns: list[str] | None = None  # If None, all columns will be filtered.
+    filtering_columns: list[str] | None = Field(
+        default=None,
+        description=(
+            "Subset of columns to evaluate for correlation filtering. "
+            "``None`` (default) evaluates all columns. "
+            "Columns not in this list are always kept in the output."
+        ),
+    )
 
-class CorrelationFilterHyperparameters(TransformHyperParameters):
-    """Hyperparameters for the Correlation Filter Node."""
 
-    threshold: float = 0.9
-    corr_type: str = "pearson"  # Type of correlation to use. Can be "pearson", "spearman", or "kendall".
+class CorrelationFilterHyperParameters(TransformHyperParameters):
+    """Tuneable hyperparameters for the CorrelationFilter."""
 
-hyperparameter_space = {
-    "threshold": ("float", {"min": 0, "max": 1}),
-    "corr_type": ("categorical", {"choices": ["pearson", "spearman", "kendall"]}),
+    threshold: float = Field(
+        default=0.95,
+        gt=0.0,
+        le=1.0,
+        description=(
+            "Maximum allowed absolute correlation between any pair of features. "
+            "When a pair exceeds this value the second column (in column order) "
+            "is dropped. ``0.95`` is a common default; lower values are more "
+            "aggressive."
+        ),
+    )
+    method: Literal["pearson", "spearman", "kendall"] = Field(
+        default="pearson",
+        description=(
+            "Correlation method. "
+            "``'pearson'`` measures linear correlation (fast, via numpy). "
+            "``'spearman'`` measures monotonic correlation (rank-based). "
+            "``'kendall'`` measures ordinal association (rank-based, slower)."
+        ),
+    )
+
+
+# Exposed at module level so external tuners can discover the search space.
+hyperparameter_space: dict[str, tuple[str, Any]] = {
+    "threshold": ("float", {"min": 0.5, "max": 1.0}),
+    "method": ("choice", ["pearson", "spearman", "kendall"]),
 }
 
-class CorrelationFilterConfig(TransformConfig):
-    """Correlation Filter Config class."""
 
-    running_config: CorrelationFilterRunningConfig = CorrelationFilterRunningConfig()
-    hyperparameters: CorrelationFilterHyperparameters = CorrelationFilterHyperparameters()
-    in_ports: dict[str, Port] = {"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="input port")} # Pydantic already handles the deepcopy
-    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="output port")} # Pydantic already handles the deepcopy
+class CorrelationFilterConfig(
+    TransformConfig[
+        CorrelationFilterRunningConfig,
+        CorrelationFilterHyperParameters,
+    ]
+):
+    """Full configuration for the CorrelationFilter node."""
 
-class CorrelationFilter(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, dict[str, list[str]]]):
-    """Filters out nodes with high correlation to other features."""
+    hyperparameters: CorrelationFilterHyperParameters = Field(
+        default_factory=CorrelationFilterHyperParameters,
+        description="Tuneable hyperparameters (threshold, method).",
+    )
+    running_config: CorrelationFilterRunningConfig = Field(
+        default_factory=CorrelationFilterRunningConfig,
+        description="Run-time options (filtering_columns).",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Numerical DataFrame to filter by correlation.",
+            ),
+        },
+        description="Input ports: 'input' (numerical DataFrame).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch _",
+                desc=(
+                    "DataFrame with highly correlated features removed. "
+                    "Feature dimension may shrink."
+                ),
+            ),
+        },
+        description="Output ports: 'output' (filtered DataFrame).",
+    )
+
+
+class CorrelationFilter(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        _CorrelationFilterParams,
+    ]
+):
+    """Remove highly correlated numerical features.
+
+    During :meth:`fit`, computes the pair-wise correlation matrix and
+    greedily marks columns for removal when their absolute correlation
+    with an already-kept column exceeds the threshold.  The first column
+    in every correlated group is always retained.
+
+    Example
+    -------
+    >>> cfg = CorrelationFilterConfig(
+    ...     hyperparameters=CorrelationFilterHyperParameters(
+    ...         threshold=0.9, method="spearman"
+    ...     ),
+    ... )
+    >>> node = CorrelationFilter(config=cfg)
+    """
 
     metadata = CorrelationFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: CorrelationFilterConfig) -> None:
-        """Initialize the CorrelationFilter Node with the given configuration."""
         self._config = config
-        self._params: dict[str, list[str]] = {}  # To store the columns to filter after fitting. This is what will be used during transform to actually filter the columns.
+        self._params: _CorrelationFilterParams = {"columns_to_keep": []}
+        self._fitted = False
 
-    def _get_filtered_numeric_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Return only the requested numeric columns."""
-        requested_columns = self._config.running_config.filtering_columns
-        filtered_data_columns = filter_columns(data, requested_columns)
-        return filter_dtypes(filtered_data_columns, requested_dtypes=["number"])
+    # --- TransformNode interface ------------------------------------------
 
-    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Fit the CorrelationFilter Node with the given data."""
+    def fit(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> None:
+        """Compute the correlation matrix and identify redundant columns.
+
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.
+        """
         df, _ = data["input"]
-        corr_type = self._config.hyperparameters.corr_type
-        filtered_df = self._get_filtered_numeric_data(df)
-        corr_matrix = filtered_df.corr(method=corr_type).abs() # type: ignore # Error due to pandas typing but verified there's no issue
-        upper_tri = corr_matrix.where(
-            pd.np.triu(pd.np.ones(corr_matrix.shape), k=1).astype(bool) # type: ignore
+        candidates = filter_columns(
+            df, self._config.running_config.filtering_columns
         )
-        to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > self._config.hyperparameters.threshold)]
-        self._params = {"columns_to_filter": to_drop}
+        threshold = self._config.hyperparameters.threshold
+        method = self._config.hyperparameters.method
 
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Apply the correlation filter to the given data."""
-        df, context = data["input"]
-        columns_to_drop = self._params["columns_to_filter"]  # Will never miss because of the check in the base Transform API.
-        filtered_df = df.drop(columns=columns_to_drop)
-        context.remove_columns(columns_to_drop)
-        return {"output": (filtered_df, context)}
+        corr_matrix = self._compute_correlation(candidates, method)
+        cols_to_drop = self._greedy_drop(candidates.columns.tolist(), corr_matrix, threshold)
 
-    def get_params(self) -> dict[str, list[str]]:
-        """Return the parameters of the CorrelationFilter Node."""
+        surviving_cols = [
+            c for c in candidates.columns if c not in cols_to_drop
+        ]
+
+        # Columns not in the candidate set are always kept.
+        non_candidate_cols = [
+            c for c in df.columns if c not in candidates.columns
+        ]
+        self._params = {
+            "columns_to_keep": non_candidate_cols + surviving_cols,
+        }
+
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+        """Subset the DataFrame to the columns identified during fit.
+
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.
+        """
+        df, ctx = data["input"]
+        keep = self._params["columns_to_keep"]
+        dropped = [c for c in df.columns if c not in set(keep)]
+
+        out_ctx = deepcopy(ctx)
+        out_ctx.remove_columns(dropped)
+        return {"output": (df[keep], out_ctx)}
+
+    def get_params(self) -> _CorrelationFilterParams:
+        """Return the list of columns that survived filtering."""
         return self._params
 
-    def set_params(self, params: dict[str, list[str]]) -> None:
-        """Set the parameters of the CorrelationFilter Node."""
+    def set_params(self, params: _CorrelationFilterParams) -> None:
+        """Restore a previously fitted column list (checkpointing)."""
         self._params = params
+        self._fitted = True
+
+    # --- Private helpers --------------------------------------------------
+
+    @staticmethod
+    def _compute_correlation(
+        df: pd.DataFrame, method: str
+    ) -> np.ndarray:
+        """Return an ``(n_features, n_features)`` absolute correlation matrix."""
+        arr = df.to_numpy(dtype=np.float64, na_value=np.nan)
+
+        if method == "pearson":
+            # Drop rows with any NaN for corrcoef (it does not handle NaN).
+            mask = ~np.isnan(arr).any(axis=1)
+            clean = arr[mask]
+            if clean.shape[0] < 2:
+                return np.zeros((arr.shape[1], arr.shape[1]))
+            return np.abs(np.corrcoef(clean, rowvar=False))
+
+        if method == "spearman":
+            from scipy.stats import spearmanr
+
+            corr, _ = spearmanr(arr, nan_policy="omit")
+            # spearmanr returns a scalar when n_features == 1.
+            corr = np.atleast_2d(corr)
+            return np.abs(corr)
+
+        # method == "kendall"
+        from scipy.stats import kendalltau
+
+        n = arr.shape[1]
+        corr = np.ones((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                mask = ~(np.isnan(arr[:, i]) | np.isnan(arr[:, j]))
+                if mask.sum() < 2:
+                    corr[i, j] = corr[j, i] = 0.0
+                else:
+                    tau, _ = kendalltau(arr[mask, i], arr[mask, j])
+                    corr[i, j] = corr[j, i] = abs(tau)
+        return corr
+
+    @staticmethod
+    def _greedy_drop(
+        columns: list[str],
+        corr_matrix: np.ndarray,
+        threshold: float,
+    ) -> set[str]:
+        """Greedily select columns to drop from a correlation matrix.
+
+        Iterates in column order.  For every pair ``(i, j)`` with ``i < j``
+        where ``|corr| > threshold``, column *j* is marked for removal
+        (provided column *i* has not already been marked).
+        """
+        n = len(columns)
+        to_drop: set[int] = set()
+
+        for i in range(n):
+            if i in to_drop:
+                continue
+            for j in range(i + 1, n):
+                if j in to_drop:
+                    continue
+                if corr_matrix[i, j] > threshold:
+                    to_drop.add(j)
+
+        return {columns[idx] for idx in to_drop}

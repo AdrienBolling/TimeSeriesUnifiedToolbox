@@ -1,9 +1,20 @@
-"""Module for the RowConcatenate operation node."""
+"""RowConcatenate transform node for the TSUT Framework.
+
+Concatenates two DataFrames along the row axis (batch dimension).  Both
+inputs must share exactly the same schema — columns, dtypes, and data
+categories must all match.  The output row index is reset so that
+downstream nodes receive a contiguous index starting at 0.
+"""
 
 import pandas as pd
+from pydantic import Field
 
-from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
-from tsut.core.common.data.tabular_data import TabularDataContext
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
+)
 from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
@@ -15,70 +26,151 @@ from tsut.core.nodes.transform.transform import (
 
 
 class RowConcatenateMetadata(TransformMetadata):
-    """Metadata for the RowConcatenate TransformNode in a TSUT Pipeline."""
+    """Metadata for the RowConcatenate node."""
 
     node_name: str = "RowConcatenate"
-    input_type: str = "pd.DataFrame"
-    output_type: str = "pd.DataFrame"
-    description: str = "Concatenate multiple DataFrames along the row axis (index)."
-    trainable: bool = False  # This transform is not trainable, since it does not learn any parameters from the data. It simply applies a deterministic operation to the input data.
+    description: str = (
+        "Concatenate two DataFrames row-wise (batch axis). "
+        "Both inputs must share the same schema."
+    )
+    trainable: bool = False
+
 
 class RowConcatenateRunningConfig(TransformRunningConfig):
-    """Running configuration for the RowConcatenate TransformNode in the TSUT Framework.
+    """No run-time knobs needed for row concatenation."""
 
-    This will usually be used for execution parameters that are not relevant for the definition of the transform itself, rather for how to run it.
-    For example, in some transforms, this could be very specific parameters such as the backend to use for computations etc.
-    """
 
 class RowConcatenateHyperParameters(TransformHyperParameters):
-    """Hyperparameters for the RowConcatenate TransformNode in the TSUT Framework.
+    """No learnable hyperparameters."""
 
-    This will usually be used for parameters that are relevant for the definition of the transform itself, and that are relevant to be tuned during hyperparameter tuning.
-    For example, in some transforms, this could be the window size for a rolling window transform, etc.
+
+class RowConcatenateConfig(
+    TransformConfig[RowConcatenateRunningConfig, RowConcatenateHyperParameters]
+):
+    """Full configuration for the RowConcatenate node."""
+
+    hyperparameters: RowConcatenateHyperParameters = Field(
+        default_factory=RowConcatenateHyperParameters,
+        description="No tuneable hyperparameters for this node.",
+    )
+    running_config: RowConcatenateRunningConfig = Field(
+        default_factory=RowConcatenateRunningConfig,
+        description="No run-time knobs for this node.",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "input_1": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch1 feature",
+                desc="First DataFrame (batch1 × feature).",
+            ),
+            "input_2": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch2 feature",
+                desc="Second DataFrame (batch2 × feature).",
+            ),
+        },
+        description="Input ports: 'input_1' and 'input_2' (same-schema DataFrames).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="_ feature",
+                desc="Row-concatenated DataFrame ((batch1+batch2) × feature).",
+            ),
+        },
+        description="Output ports: 'output' (concatenated DataFrame).",
+    )
+
+
+class RowConcatenate(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        None,
+    ]
+):
+    """Concatenate two DataFrames along the row axis.
+
+    The output context is inherited from ``input_1``.  The row index of the
+    output is reset to avoid duplicate index values.
+
+    **Schema validation** – both inputs must have identical column names,
+    dtypes, and data categories.  A ``ValueError`` is raised otherwise.
+    This is checked in both :meth:`fit` (early feedback) and
+    :meth:`transform` (runtime safety).
     """
-
-class RowConcatenateConfig(TransformConfig[RowConcatenateRunningConfig, RowConcatenateHyperParameters]):
-    """Configuration for the RowConcatenate TransformNode in the TSUT Framework."""
-
-    running_config: RowConcatenateRunningConfig = RowConcatenateRunningConfig()
-    hyperparameters: RowConcatenateHyperParameters = RowConcatenateHyperParameters()
-    in_ports: dict[str, Port] = {"input_1": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch1 feature",desc="First input DataFrame to concatenate"), "input_2": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch2 feature", desc="Second input DataFrame to concatenate")}
-    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.MIXED, data_shape="batch1+batch2 feature", desc="Concatenated output DataFrame")}
-
-class RowConcatenate(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, None]):
-    """Node that concatenates multiple DataFrames along the row axis (index)."""
 
     metadata = RowConcatenateMetadata()
 
-
-    def __init__(self, *, config: TransformConfig) -> None:
+    def __init__(self, *, config: RowConcatenateConfig) -> None:
         self._config = config
 
-    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Don't fit.
+    # --- TransformNode interface ------------------------------------------
 
-        Since it does not learn any parameters from the data. It simply applies a deterministic operation to the input data.
+    def fit(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> None:
+        """Validate schema compatibility at fit time (no parameters to learn)."""
+        _, ctx1 = data["input_1"]
+        _, ctx2 = data["input_2"]
+        self._assert_schema_compatible(ctx1, ctx2)
+
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+        """Concatenate the two DataFrames row-wise.
+
+        Parameters
+        ----------
+        data:
+            Must contain keys ``"input_1"`` and ``"input_2"``.
         """
-
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Concatenate the input DataFrames along the row axis (index)."""
         df1, ctx1 = data["input_1"]
         df2, ctx2 = data["input_2"]
+        self._assert_schema_compatible(ctx1, ctx2)
 
-        if not self._check_context_compatibility(ctx1, ctx2):
-            raise ValueError("The contexts of the input DataFrames are not compatible for concatenation. Please ensure that the contexts are compatible before concatenating.")
+        concatenated = pd.concat([df1, df2], axis=0, ignore_index=True)
+        return {"output": (concatenated, ctx1)}
 
-        # Concatenate the DataFrames along the row axis (index)
-        concatenated_df = pd.concat([df1, df2], axis=0)
+    def get_params(self) -> None:
+        """No learned parameters — returns ``None``."""
+        return None
 
-        # For the context, we can simply take the context of the first input, or we could implement a more complex logic to merge the contexts if needed. For simplicity, we'll take the context of the first input.
-        return {"output": (concatenated_df, ctx1)}
+    def set_params(self, params: None) -> None:  # noqa: ARG002
+        """No learned parameters to restore."""
 
-    # --- Internal methods
+    # --- Private helpers --------------------------------------------------
 
-    def _check_context_compatibility(self, ctx1: TabularDataContext, ctx2: TabularDataContext) -> bool:
-        """Check the compatibility of the contexts of the two input DataFrames.
-
-        Here this means checking if the two contexts are stricly equal, which is a very strict condition but it is the safest one to ensure that we are not concatenating data with incompatible contexts. In the future, we could implement a more flexible logic to check for compatibility of contexts, for example by checking if they have the same features, even if they have different metadata for these features.
-        """
-        return ctx1 == ctx2
+    @staticmethod
+    def _assert_schema_compatible(
+        ctx1: TabularDataContext, ctx2: TabularDataContext
+    ) -> None:
+        """Raise ``ValueError`` if the two contexts have incompatible schemas."""
+        if ctx1.columns != ctx2.columns:
+            raise ValueError(
+                f"RowConcatenate: column mismatch between inputs.\n"
+                f"  input_1 columns: {ctx1.columns}\n"
+                f"  input_2 columns: {ctx2.columns}"
+            )
+        if ctx1.dtypes != ctx2.dtypes:
+            raise ValueError(
+                f"RowConcatenate: dtype mismatch between inputs.\n"
+                f"  input_1 dtypes: {ctx1.dtypes}\n"
+                f"  input_2 dtypes: {ctx2.dtypes}"
+            )
+        if ctx1.categories != ctx2.categories:
+            raise ValueError(
+                f"RowConcatenate: data-category mismatch between inputs.\n"
+                f"  input_1 categories: {ctx1.categories}\n"
+                f"  input_2 categories: {ctx2.categories}"
+            )

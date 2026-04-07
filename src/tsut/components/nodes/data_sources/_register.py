@@ -1,22 +1,19 @@
-"""Module for registering data source nodes in the TSUT Framework."""
+"""Register data-source nodes from this package into the NODE_REGISTRY."""
 
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 
-from .csv_fetcher import (
-    CSVFetcherConfig,
-    CSVFetcherNode,
-    CSVFetcherRunningConfig,
+from .tabular_csv_fetcher import (
+    TabularCSVFetcher,
+    TabularCSVFetcherConfig,
+    TabularCSVFetcherRunningConfig,
 )
 
-# --- Registering the nodes in the registry ---
-# Do this for all the nodes defined in this module, so that they can be easily accessed and used in the TSUT Framework.
+
 def register_nodes() -> None:
-    """Register all data source nodes defined in this module to the NODE_REGISTRY."""
+    """Register all data-source nodes defined in this package."""
     NODE_REGISTRY.register(
-        name="CSVFetcher",
-        node_class=CSVFetcherNode,
-        node_config_class=CSVFetcherConfig,
-        running_config_class=CSVFetcherRunningConfig,
+        name="TabularCSVFetcher",
+        node_class=TabularCSVFetcher,
+        node_config_class=TabularCSVFetcherConfig,
+        running_config_class=TabularCSVFetcherRunningConfig,
     )
-
-

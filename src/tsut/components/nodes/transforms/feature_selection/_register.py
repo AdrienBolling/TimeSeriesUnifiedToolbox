@@ -1,50 +1,53 @@
-"""Module for registering feature selection nodes in the TSUT Framework."""
+"""Register feature-selection transform nodes from this package into the NODE_REGISTRY."""
 
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 
 from .correlation_filter import (
     CorrelationFilter,
     CorrelationFilterConfig,
+    CorrelationFilterHyperParameters,
+    CorrelationFilterRunningConfig,
 )
+from .data_category_filter import DataCategoryFilter, DataCategoryFilterConfig
 from .missing_rate_filter import (
+    MissingRateFilter,
     MissingRateFilterConfig,
-    MissingRateFilterNode,
-)
-from .remove_categorical import (
-    RemoveCategoricalConfig,
-    RemoveCategoricalNode,
+    MissingRateFilterHyperParameters,
+    MissingRateFilterRunningConfig,
 )
 from .variance_filter import (
     VarianceFilter,
     VarianceFilterConfig,
+    VarianceFilterHyperParameters,
+    VarianceFilterRunningConfig,
 )
 
-# --- Registering the nodes in the registry ---
-# Do this for all the nodes defined in this module, so that they can be easily accessed
 
 def register_nodes() -> None:
-    """Register all feature selection nodes defined in this module to the NODE_REGISTRY."""
+    """Register all feature-selection nodes defined in this package."""
     NODE_REGISTRY.register(
-        name="CorrelationFilter",
-        node_class=CorrelationFilter,
-        node_config_class=CorrelationFilterConfig,
+        name="DataCategoryFilter",
+        node_class=DataCategoryFilter,
+        node_config_class=DataCategoryFilterConfig,
     )
-
     NODE_REGISTRY.register(
         name="MissingRateFilter",
-        node_class=MissingRateFilterNode,
+        node_class=MissingRateFilter,
         node_config_class=MissingRateFilterConfig,
+        running_config_class=MissingRateFilterRunningConfig,
+        hyperparameters_class=MissingRateFilterHyperParameters,
     )
-
     NODE_REGISTRY.register(
         name="VarianceFilter",
         node_class=VarianceFilter,
         node_config_class=VarianceFilterConfig,
+        running_config_class=VarianceFilterRunningConfig,
+        hyperparameters_class=VarianceFilterHyperParameters,
     )
-
     NODE_REGISTRY.register(
-        name="RemoveCategorical",
-        node_class=RemoveCategoricalNode,
-        node_config_class=RemoveCategoricalConfig,
+        name="CorrelationFilter",
+        node_class=CorrelationFilter,
+        node_config_class=CorrelationFilterConfig,
+        running_config_class=CorrelationFilterRunningConfig,
+        hyperparameters_class=CorrelationFilterHyperParameters,
     )
-

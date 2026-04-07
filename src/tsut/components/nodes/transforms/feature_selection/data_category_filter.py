@@ -1,0 +1,255 @@
+"""DataCategoryFilter transform node for the TSUT Framework.
+
+Splits a mixed-category DataFrame into two streams by reading the column
+semantics from the :class:`~tsut.core.common.data.data.TabularDataContext`:
+
+* ``categorical`` – columns tagged as :class:`~tsut.core.common.data.data.CategoricalData`
+* ``numerical``   – columns tagged as :class:`~tsut.core.common.data.data.NumericalData`
+
+Columns tagged as :class:`~tsut.core.common.data.data.MixedData` are
+excluded from both outputs.  Using the context (not pandas dtype
+introspection) as the source of truth ensures correctness after transforms
+such as label-encoding, which assign a numeric dtype to a categorical column.
+
+The two retained column lists are persisted via :meth:`get_params` /
+:meth:`set_params` so the node can be checkpointed and restored without
+re-fitting.
+"""
+
+from typing import Any
+
+import pandas as pd
+from pydantic import Field
+
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    CategoricalData,
+    DataCategoryEnum,
+    DataStructureEnum,
+    NumericalData,
+    TabularDataContext,
+)
+from tsut.core.nodes.node import Port
+from tsut.core.nodes.transform.transform import (
+    TransformConfig,
+    TransformHyperParameters,
+    TransformMetadata,
+    TransformNode,
+    TransformRunningConfig,
+)
+
+
+class DataCategoryFilterMetadata(TransformMetadata):
+    """Metadata for the DataCategoryFilter node."""
+
+    node_name: str = "DataCategoryFilter"
+    description: str = (
+        "Split a mixed-category DataFrame into categorical and numerical streams "
+        "using the TabularDataContext as the authoritative source of column semantics."
+    )
+    trainable: bool = True
+
+
+class DataCategoryFilterRunningConfig(TransformRunningConfig):
+    """No run-time knobs for this node."""
+
+
+class DataCategoryFilterHyperParameters(TransformHyperParameters):
+    """No learnable hyperparameters."""
+
+
+# Serialisable params: per-category lists of column names captured during fit.
+type _DataCategoryFilterParams = dict[str, list[str]]
+
+
+class DataCategoryFilterConfig(
+    TransformConfig[
+        DataCategoryFilterRunningConfig,
+        DataCategoryFilterHyperParameters,
+    ]
+):
+    """Full configuration for the DataCategoryFilter node."""
+
+    hyperparameters: DataCategoryFilterHyperParameters = Field(
+        default_factory=DataCategoryFilterHyperParameters,
+        description="No tuneable hyperparameters for this node.",
+    )
+    running_config: DataCategoryFilterRunningConfig = Field(
+        default_factory=DataCategoryFilterRunningConfig,
+        description="No run-time knobs for this node.",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch feature",
+                desc="Mixed-category input DataFrame.",
+            ),
+        },
+        description="Input port: 'input' (mixed-category DataFrame).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "categorical": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.CATEGORICAL,
+                data_shape="batch _",
+                desc="Columns tagged as CategoricalData in the input context.",
+            ),
+            "numerical": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch _",
+                desc="Columns tagged as NumericalData in the input context.",
+            ),
+        },
+        description=(
+            "Output ports: 'categorical' and 'numerical'. "
+            "MixedData columns are excluded from both."
+        ),
+    )
+
+
+class DataCategoryFilter(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        _DataCategoryFilterParams,
+    ]
+):
+    """Split a mixed DataFrame into categorical and numerical output ports.
+
+    The column assignment is determined once during :meth:`fit` by reading
+    ``ctx.categories`` and is reused on every subsequent :meth:`transform`
+    call.  :class:`~tsut.core.common.data.data.MixedData` columns are not
+    routed to either output.
+
+    Parameters
+    ----------
+    config:
+        Node configuration.  :class:`DataCategoryFilterConfig` is the
+        expected type; its defaults require no arguments.
+
+    Example
+    -------
+    >>> node = DataCategoryFilter(config=DataCategoryFilterConfig())
+    >>> node.node_fit_transform({"input": (df, ctx)})
+    {"categorical": (df_cat, ctx_cat), "numerical": (df_num, ctx_num)}
+    """
+
+    metadata = DataCategoryFilterMetadata()
+
+    def __init__(self, *, config: DataCategoryFilterConfig) -> None:
+        self._config = config
+        self._params: _DataCategoryFilterParams = {
+            "categorical": [],
+            "numerical": [],
+        }
+        # Guard: node_transform raises until fit has been called.
+        self._fitted = False
+
+    # --- TransformNode interface ------------------------------------------
+
+    def fit(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> None:
+        """Identify categorical and numerical columns from the input context.
+
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.  Only the
+            :class:`~tsut.core.common.data.data.TabularDataContext` is
+            read; the DataFrame values are not inspected.
+        """
+        _, ctx = data["input"]
+        self._params = {
+            "categorical": [
+                col
+                for col, cat in zip(ctx.columns, ctx.categories, strict=True)
+                if cat is CategoricalData
+            ],
+            "numerical": [
+                col
+                for col, cat in zip(ctx.columns, ctx.categories, strict=True)
+                if cat is NumericalData
+            ],
+        }
+
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+        """Route columns to the ``categorical`` and ``numerical`` output ports.
+
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.
+
+        Returns
+        -------
+        dict
+            Always contains both ``"categorical"`` and ``"numerical"`` keys.
+            Either DataFrame may have zero columns if no matching columns
+            were found during :meth:`fit`.
+        """
+        df, ctx = data["input"]
+        return {
+            "categorical": self._select(df, ctx, self._params["categorical"]),
+            "numerical":   self._select(df, ctx, self._params["numerical"]),
+        }
+
+    def get_params(self) -> _DataCategoryFilterParams:
+        """Return the column assignment learned during fit.
+
+        Returns
+        -------
+        dict
+            ``{"categorical": [...], "numerical": [...]}``
+        """
+        return self._params
+
+    def set_params(self, params: _DataCategoryFilterParams) -> None:
+        """Restore a previously fitted column assignment (checkpointing).
+
+        Parameters
+        ----------
+        params:
+            Dict with keys ``"categorical"`` and ``"numerical"``, each
+            mapping to a list of column names.
+        """
+        self._params = params
+        self._fitted = True
+
+    # --- Private helpers --------------------------------------------------
+
+    @staticmethod
+    def _select(
+        df: pd.DataFrame,
+        ctx: TabularDataContext,
+        columns: list[str],
+    ) -> tuple[pd.DataFrame, TabularDataContext]:
+        """Slice *df* and *ctx* to the requested *columns*."""
+        keep = set(columns)
+        return (
+            df[columns],
+            TabularDataContext(
+                columns=[c for c in ctx.columns if c in keep],
+                dtypes=[
+                    d
+                    for c, d in zip(ctx.columns, ctx.dtypes, strict=True)
+                    if c in keep
+                ],
+                categories=[
+                    cat
+                    for c, cat in zip(ctx.columns, ctx.categories, strict=True)
+                    if c in keep
+                ],
+            ),
+        )

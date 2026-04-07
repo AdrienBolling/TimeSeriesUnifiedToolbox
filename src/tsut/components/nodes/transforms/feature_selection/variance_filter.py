@@ -1,11 +1,30 @@
-"""Variance Filter for features"""
+"""VarianceFilter transform node for the TSUT Framework.
+
+Removes numerical features whose variance falls below a configurable
+threshold.  The per-column variance is computed during :meth:`fit` using
+numpy and the resulting column mask is reused at :meth:`transform` time.
+
+A threshold of ``0.0`` (the default) removes only constant columns.  Higher
+values can be used to filter out near-constant or low-information features.
+
+* Input  – a ``(batch, feature)`` **numerical** DataFrame.
+* Output – the same DataFrame with low-variance columns removed.
+"""
+
+from copy import deepcopy
+from typing import Any
 
 import numpy as np
 import pandas as pd
+from pydantic import Field
 
-from tsut.components.utils.dataframe import filter_columns, filter_dtypes
-from tsut.core.common.data.data import ArrayLikeEnum, DataCategoryEnum
-from tsut.core.common.data.tabular_data import TabularDataContext
+from tsut.components.utils.dataframe import filter_columns
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
+)
 from tsut.core.nodes.node import Port
 from tsut.core.nodes.transform.transform import (
     TransformConfig,
@@ -15,86 +34,188 @@ from tsut.core.nodes.transform.transform import (
     TransformRunningConfig,
 )
 
+# Serialisable params: list of column names that survived the filter.
+type _VarianceFilterParams = dict[str, list[str]]
+
 
 class VarianceFilterMetadata(TransformMetadata):
-    """Metadata for the VarianceFilter Node."""
+    """Metadata for the VarianceFilter node."""
 
-    node_name: str = "Variance Feature Filter"
-    input_type: str ="pd.DataFrame"
-    output_type: str ="pd.DataFrame"
-    description: str ="Filters out features with near 0 variance."
+    node_name: str = "VarianceFilter"
+    description: str = (
+        "Remove numerical features whose variance falls below a "
+        "configurable threshold.  A threshold of 0 removes only constant columns."
+    )
+
 
 class VarianceFilterRunningConfig(TransformRunningConfig):
-    """Runniong config for the Variance Filter Node."""
+    """Run-time knobs that do not affect the learned parameters."""
 
-    filtering_columns: list[str] | None = None  # If None, all columns will be filtered.
+    filtering_columns: list[str] | None = Field(
+        default=None,
+        description=(
+            "Subset of columns to evaluate for variance filtering. "
+            "``None`` (default) evaluates all columns. "
+            "Columns not in this list are always kept in the output."
+        ),
+    )
 
-class VarianceFilterHyperparameters(TransformHyperParameters):
-    """Hyperparameters for the Variance Filter Node."""
 
-    threshold: float = 0.1
+class VarianceFilterHyperParameters(TransformHyperParameters):
+    """Tuneable hyperparameters for the VarianceFilter."""
 
-hyperparameter_space = {
-    "threshold": ("float", {"min": 0, "max": np.inf}),
+    threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Minimum variance a column must have to be retained. "
+            "``0.0`` (default) removes only strictly constant columns. "
+            "Higher values are more aggressive and remove low-information features."
+        ),
+    )
+
+
+# Exposed at module level so external tuners can discover the search space.
+hyperparameter_space: dict[str, tuple[str, Any]] = {
+    "threshold": ("float", {"min": 0.0, "max": 10.0}),
 }
 
-class VarianceFilterConfig(TransformConfig):
-    """Variance Filter Config class."""
 
-    running_config: VarianceFilterRunningConfig = VarianceFilterRunningConfig()
-    hyperparameters: VarianceFilterHyperparameters = VarianceFilterHyperparameters()
-    in_ports: dict[str, Port] = {"input": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="input port")} # Pydantic already handles the deepcopy
-    out_ports: dict[str, Port] = {"output": Port(arr_type=ArrayLikeEnum.PANDAS, data_category=DataCategoryEnum.NUMERICAL, data_shape="batch features", desc="output port")} # Pydantic already handles the deepcopy
+class VarianceFilterConfig(
+    TransformConfig[
+        VarianceFilterRunningConfig,
+        VarianceFilterHyperParameters,
+    ]
+):
+    """Full configuration for the VarianceFilter node."""
+
+    hyperparameters: VarianceFilterHyperParameters = Field(
+        default_factory=VarianceFilterHyperParameters,
+        description="Tuneable hyperparameters (threshold).",
+    )
+    running_config: VarianceFilterRunningConfig = Field(
+        default_factory=VarianceFilterRunningConfig,
+        description="Run-time options (filtering_columns).",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "input": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch feature",
+                desc="Numerical DataFrame to filter by variance.",
+            ),
+        },
+        description="Input ports: 'input' (numerical DataFrame).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "output": Port(
+                arr_type=ArrayLikeEnum.PANDAS,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch _",
+                desc=(
+                    "DataFrame with low-variance columns removed. "
+                    "Feature dimension may shrink."
+                ),
+            ),
+        },
+        description="Output ports: 'output' (filtered DataFrame).",
+    )
 
 
-class VarianceFilter(TransformNode[pd.DataFrame, TabularDataContext, pd.DataFrame, TabularDataContext, dict[str, dict[str, float]]]):
-    """Filters out nodes with near-zero variance."""
+class VarianceFilter(
+    TransformNode[
+        pd.DataFrame,
+        TabularDataContext,
+        pd.DataFrame,
+        TabularDataContext,
+        _VarianceFilterParams,
+    ]
+):
+    """Remove numerical features with variance below a threshold.
+
+    During :meth:`fit`, computes the variance of each candidate column
+    using ``numpy.nanvar`` (ignoring NaN values) and stores the list of
+    columns that pass.  During :meth:`transform`, the stored list is used
+    to subset the DataFrame and its context.
+
+    Example
+    -------
+    >>> cfg = VarianceFilterConfig(
+    ...     hyperparameters=VarianceFilterHyperParameters(threshold=0.01),
+    ... )
+    >>> node = VarianceFilter(config=cfg)
+    """
 
     metadata = VarianceFilterMetadata()
     hyperparameter_space = hyperparameter_space
 
     def __init__(self, *, config: VarianceFilterConfig) -> None:
-        """Initialize the VarianceFilter Node with the given configuration."""
         self._config = config
+        self._params: _VarianceFilterParams = {"columns_to_keep": []}
+        self._fitted = False
 
-    def _get_filtered_numeric_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Return only the requested numeric columns."""
-        requested_columns = self._config.running_config.filtering_columns
-        filtered_data_columns = filter_columns(data, requested_columns)
-        return filter_dtypes(filtered_data_columns, requested_dtypes=["number"])
+    # --- TransformNode interface ------------------------------------------
 
-    def fit(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> None:
-        """Fit the VarianceFilter with the given data."""
-        # Isolate the columns to filter based on the running config
-        data_df, data_context = data["input"]
-        data_to_filter = self._get_filtered_numeric_data(data_df)
-        # Compute the variance for each column
-        variance = pd.Series(data_to_filter.var(), index=data_to_filter.columns)
-        # Determine which columns to filter out based on the threshold
-        columns_to_filter = pd.Series(variance[variance < self._config.hyperparameters.threshold]).index
-        self._params = {"columns_to_filter": [str(col) for col in list(columns_to_filter)]}
+    def fit(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> None:
+        """Identify columns whose variance meets the threshold.
 
-        # Check the validity of the columns to filter
-        if len(columns_to_filter) == 0:
-            raise ValueError("No columns to filter based on the given threshold. Consider lowering the threshold or checking the data.")
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.
+        """
+        df, _ = data["input"]
+        candidates = filter_columns(
+            df, self._config.running_config.filtering_columns
+        )
+        threshold = self._config.hyperparameters.threshold
 
-    def transform(self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
-        """Transform the data by filtering out the columns with near-zero variance."""
-        data_df, data_context = data["input"]
-        columns_to_filter = self._params["columns_to_filter"]
-        invert_columns_to_filter = [col for col in data_df.columns if col not in columns_to_filter]
-        transformed_data = filter_columns(data_df, invert_columns_to_filter)
-        data_context.remove_columns(columns_to_filter)
-        return {"output": (transformed_data, data_context)}
+        # Compute variance using numpy, ignoring NaN values.
+        variances = np.nanvar(candidates.to_numpy(dtype=np.float64, na_value=np.nan), axis=0)
 
-    def get_params(self) -> dict[str, list[str]]:
-        """Get the current parameters of the VarianceFilter, namely the columns that are being filtered out."""
+        surviving_cols = [
+            col
+            for col, var in zip(candidates.columns, variances, strict=True)
+            if var >= threshold
+        ]
+
+        # Columns not in the candidate set are always kept.
+        non_candidate_cols = [
+            c for c in df.columns if c not in candidates.columns
+        ]
+        self._params = {
+            "columns_to_keep": non_candidate_cols + surviving_cols,
+        }
+
+    def transform(
+        self, data: dict[str, tuple[pd.DataFrame, TabularDataContext]]
+    ) -> dict[str, tuple[pd.DataFrame, TabularDataContext]]:
+        """Subset the DataFrame to the columns identified during fit.
+
+        Parameters
+        ----------
+        data:
+            Must contain key ``"input"``.
+        """
+        df, ctx = data["input"]
+        keep = self._params["columns_to_keep"]
+        dropped = [c for c in df.columns if c not in set(keep)]
+
+        out_ctx = deepcopy(ctx)
+        out_ctx.remove_columns(dropped)
+        return {"output": (df[keep], out_ctx)}
+
+    def get_params(self) -> _VarianceFilterParams:
+        """Return the list of columns that survived filtering."""
         return self._params
 
-    def set_params(self, params: dict[str, list[str]]) -> None:
-        """Set the parameters of the VarianceFilter. This can be used to set the columns to filter out directly, without fitting."""
+    def set_params(self, params: _VarianceFilterParams) -> None:
+        """Restore a previously fitted column list (checkpointing)."""
         self._params = params
-
-
-
-
+        self._fitted = True
