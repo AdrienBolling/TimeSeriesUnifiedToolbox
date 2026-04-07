@@ -34,6 +34,8 @@ def split_execution_graph_into_columns(
     node_columns: dict[str, int | None] = dict.fromkeys(main_graph.nodes)
 
     shortest_paths_to_sink = nx.shortest_path_length(main_graph, target=sink_node)
+    if sink_node is None:
+        raise ValueError("Pipeline must have a sink node to compute layout.")
     max_depth = max(shortest_paths_to_sink.values())
 
     for node, depth in shortest_paths_to_sink.items():

@@ -19,11 +19,14 @@ from tsut.core.common.data.data import (
     Data,
 )
 from tsut.core.common.enums import NodeExecutionMode
+from tsut.core.common.logging import Logger
 from tsut.core.common.typechecking.typeguards import has_params
 from tsut.core.common.version import Version
 from tsut.core.nodes.node import Node, NodeConfig, NodeType, Port
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 from tsut.core.pipeline.render import render_pipeline_graph_plotly
+
+_log = Logger("tsut.pipeline")
 
 _ = Data  # For type checking purposes
 
@@ -41,9 +44,6 @@ def decompile(method: Callable[..., Any]):  # noqa: ANN201
         return result
 
     return wrapper
-
-
-# TODO : use Fields to both imrpove validation and provide descriptions to the Models
 
 
 class PipelineSettings(BaseSettings):
@@ -125,6 +125,11 @@ class Pipeline:
         self._sink_node_name: str | None = self._init_sink_node_name()
         # Instantiate the Sink Edges indexes
         self._sink_edges_idx: list[tuple[str, str]] = self._init_sink_edges_idx()
+
+        # Validate the edges
+        for edge in self._config.edges.values():
+            self._validate_edge(edge)
+
         # Initialize the graph representation according to the provided config
         self._init_graph_repr()
 
@@ -361,6 +366,14 @@ class Pipeline:
                 source_node_names.append(node_name)
         return source_node_names
 
+    def get_metric_node_names(self) -> list[str]:
+        """Get the list of metric node names in the pipeline."""
+        metric_node_names = []
+        for node_name, (_, node_config) in self._config.nodes.items():
+            if node_config.node_type == NodeType.METRIC:
+                metric_node_names.append(node_name)
+        return metric_node_names
+
     ## --- Public API for params management ---
     def get_params(self) -> dict[str, Any]:
         """Get the parameters of all nodes in the pipeline, for all nodes that have parameters."""
@@ -412,7 +425,17 @@ class Pipeline:
 
         """
         fully_instantiated_nodes = self._full_init_node_configs(config.nodes)
-        edges_dict = {(edge.source, edge.target): edge for edge in config.edges}
+        edges_dict = {}
+        for edge in config.edges:
+            if (edge.source, edge.target) in edges_dict:
+                # Merge the ports_map of the edge if an edge between the same source and target already exists
+                existing_edge = edges_dict[(edge.source, edge.target)]
+                existing_edge.ports_map = list(
+                    set(existing_edge.ports_map + edge.ports_map)
+                )  # Merge the ports_map while avoiding duplicates
+                edges_dict[(edge.source, edge.target)] = existing_edge
+            else:
+                edges_dict[(edge.source, edge.target)] = edge
         return _InternalPipelineConfig(
             nodes=fully_instantiated_nodes,
             edges=edges_dict,
@@ -427,6 +450,11 @@ class Pipeline:
             node_class = NODE_REGISTRY.get_node_class(node_type)
             node_object = node_class(config=node_config)
             self._node_objects[node_name] = node_object
+            _log.debug(
+                "Node instantiated",
+                node_name=node_name,
+                node_type=node_config.node_type,
+            )
 
     def _prune(self) -> None:
         """Prune the pipeline by removing any nodes that are not connected to any Node."""
@@ -603,9 +631,11 @@ class Pipeline:
             # Check that all source ports in the ports_map exist in the source node's out_ports
             if source_port not in source_out_ports:
                 message = f"Source port '{source_port}' in edge from '{edge.source}' to '{edge.target}' does not exist in the source node's out_ports."
+                message += f"\nAvailable source ports: {list(source_out_ports.keys())}"
                 raise ValueError(message)
             if target_port not in target_in_ports:
                 message = f"Target port '{target_port}' in edge from '{edge.source}' to '{edge.target}' does not exist in the target node's in_ports."
+                message += f"\nAvailable target ports: {list(target_in_ports.keys())}"
                 raise ValueError(message)
 
             # Check that data structures match between the source and target ports
@@ -688,10 +718,13 @@ class Pipeline:
                 message = f"Data structure of source port '{source_port}' in edge from '{source}' to '{target}' is not compatible with data structure of target port '{target_port}'."
                 raise ValueError(message)
             if not (target_sub_source and source_sub_target):
-                # If the structures are not the same but are compatible, we can print a warning message to inform the user that there might be a potential issue with data structure compatibility, even though it is technically valid.
-                print(
-                    f"Warning: Data structure of source port '{source_port}' in edge from '{source}' to '{target}' is not the same as data structure of target port '{target_port}', but they are compatible. Please ensure that this is intentional and that the nodes can handle the data structure conversion if needed."
-                )  # TODO : replace with logging when implemented
+                _log.warning(
+                    "Data structure mismatch (compatible but not identical)",
+                    source=source,
+                    target=target,
+                    source_port=source_port,
+                    target_port=target_port,
+                )
 
     def _is_compatible_categories(
         self,
@@ -723,10 +756,13 @@ class Pipeline:
             if target_categories.issubset(
                 source_categories
             ) and not source_categories.issubset(target_categories):
-                message = f"Data category of source port '{source_port}' in edge from '{source}' to '{target}' is a superset of data category of target port '{target_port}'. Please ensure that this is intentional and that the target node can handle the additional data categories if needed."
-                print(
-                    f"Warning: {message}"
-                )  # TODO : replace with logging when implemented
+                _log.warning(
+                    "Data category superset (source broader than target)",
+                    source=source,
+                    target=target,
+                    source_port=source_port,
+                    target_port=target_port,
+                )
             # In other cases the edge is valid no questions asked
 
     # --- Internal methods for compilation ---
@@ -744,20 +780,35 @@ class Pipeline:
         - instantiation of the nodes
         - instantation of the true sink ports
         """
-        # Clear the node objects
-        self._node_objects = {}
-        # If needed, prune the graph (remove Nodes without outgoing or incoming edges)
-        if self.settings.autoprune:
-            self._prune()
+        log = _log.bind(pipeline_name=self.name)
+        log.log_phase("compilation", "start")
 
-        # Validate the layout
-        self._validate()
+        try:
+            # Clear the node objects
+            self._node_objects = {}
+            # If needed, prune the graph (remove Nodes without outgoing or incoming edges)
+            if self.settings.autoprune:
+                self._prune()
 
-        # Now that everything is validated, instantiate the nodes
-        self._instantiate_node_objects()
+            # Validate the layout
+            self._validate()
+
+            # Now that everything is validated, instantiate the nodes
+            self._instantiate_node_objects()
+        except Exception as exc:
+            log.exception("Compilation failed", exc)
+            raise
 
         # Finish compilation
         self._compiled = True
+        log.log_phase(
+            "compilation",
+            "end",
+            params={
+                "node_count": len(self._node_objects),
+                "edge_count": len(self._config.edges),
+            },
+        )
 
     # --- Rendering utils ---
     def render(
@@ -777,3 +828,22 @@ class Pipeline:
         else:
             message = f"Backend '{backend}' is not supported for rendering. Supported backends are: ['plotly']."
             raise ValueError(message)
+
+    def render_to_html(
+        self,
+        title: str | None = None,
+        backend: str = "plotly",
+        figsize: tuple[int, int] = (12, 8),
+        *,
+        full_html: bool = True,
+    ) -> str:
+        """Render the pipeline graph to an HTML string using the specified backend."""
+        if title is None:
+            title = f"Pipeline: {self.name}"
+        if backend == "plotly":
+            fig = render_pipeline_graph_plotly(
+                pipeline=self, title=title, figsize=figsize
+            )
+            return fig.to_html(full_html=full_html)
+        message = f"Backend '{backend}' is not supported for rendering. Supported backends are: ['plotly']."
+        raise ValueError(message)
