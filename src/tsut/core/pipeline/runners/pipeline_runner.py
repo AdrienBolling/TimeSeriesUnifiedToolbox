@@ -75,21 +75,29 @@ class PipelineRunner(ABC):
         """Load the parameters of all nodes in the pipeline from a directory."""
         self._pipeline.load_params_from_dir(dir_path=dir_path)
 
+    def get_metric_node_names(self) -> list[str]:
+        """Get the list of metric node names in the pipeline."""
+        return self._pipeline.get_metric_node_names()
+
     # --- API to implement for any PipelineRunner implementation ---
     # INFO : Note the absence of a 'tune' method, as I think it is best suited to be part of a Wrapper for PipelineRunners, rather than the PipelineRunner itself.
     # We will see where it belongs on the long run.
 
     @abstractmethod
-    def train(self) -> None:
+    def train(self, input_data: Mapping[str, Mapping[str, Data]] | None = None) -> None:
         """Train the pipeline."""
         ...
 
     @abstractmethod
-    def evaluate(self) -> Mapping[str, Data]:
+    def evaluate(
+        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
+    ) -> Mapping[str, Data]:
         """Evaluate the pipeline."""
         ...
 
     @abstractmethod
-    def infer(self) -> Mapping[str, Data]:
+    def infer(
+        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
+    ) -> Mapping[str, Data]:
         """Run inference with the pipeline."""
         ...
