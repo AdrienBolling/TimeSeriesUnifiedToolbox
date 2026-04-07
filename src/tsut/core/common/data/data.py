@@ -12,6 +12,16 @@ import torch
 class Data:
     """Base class for all data types in the TSUT Framework."""
 
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Return the shape of the data."""
+        raise NotImplementedError("Subclasses must implement the shape property.")
+
+    @property
+    def dtype(self) -> str:
+        """Return the dtype of the data."""
+        raise NotImplementedError("Subclasses must implement the dtype property.")
+
 
 @dataclass
 class DataContext:
@@ -188,11 +198,9 @@ class TabularData(Data):
         infer_categories: bool = True,  # Whether to infer categories from dtypes if categories are not provided. This is a bit hacky but it should work for most cases. We can always allow the user to explicitly pass the categories if they want to be more precise.
     ) -> None:
         """Initialize the TabularData."""
-        # Config
         self._infer_categories = infer_categories
-        if data is not None:
-            self._validate_data(data, columns, dtypes, categories)
         if isinstance(data, pd.DataFrame):
+            # from_pandas may infer categories, so validate *after* conversion.
             self.from_pandas(data, categories)
         elif categories is None:
             raise ValueError(
