@@ -12,9 +12,10 @@ values can be used to filter out near-constant or low-information features.
 """
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
+from ray import tune
 import pandas as pd
 from pydantic import Field
 
@@ -76,8 +77,8 @@ class VarianceFilterHyperParameters(TransformHyperParameters):
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, Any]] = {
-    "threshold": ("float", {"min": 0.0, "max": 10.0}),
+hyperparameter_space: dict[str, Any] = {
+    "threshold": tune.uniform(0.0, 10.0),
 }
 
 
@@ -209,7 +210,7 @@ class VarianceFilter(
 
         out_ctx = deepcopy(ctx)
         out_ctx.remove_columns(dropped)
-        return {"output": (df[keep], out_ctx)}
+        return {"output": (cast("pd.DataFrame", df[keep]), out_ctx)}
 
     def get_params(self) -> _VarianceFilterParams:
         """Return the list of columns that survived filtering."""

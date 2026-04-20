@@ -3,7 +3,9 @@
 TSUT Pipelines are akin to graphs. The nodes are the components of the pipeline (Models, Data sources, Transforms, etc.), and edges represent the data flow between these nodes.
 """
 
+import hashlib
 import json
+import pickle
 from collections.abc import Callable, Mapping
 from functools import wraps
 from pathlib import Path
@@ -306,6 +308,9 @@ class Pipeline:
             raise ValueError(message)
         # Add the node to the pipeline configuration
         self._config.nodes[node_name] = (node_type, node_config)
+        # Track the sink node name so compile() and related checks see it.
+        if node_config.node_type == NodeType.SINK:
+            self._sink_node_name = node_name
         # Add the node to the graph structure
         self._add_node_to_nx(node_name)
 
@@ -566,28 +571,61 @@ class Pipeline:
             node_object.set_params(node_params)
 
     def save_params_to_dir(self, dir_path: str) -> None:
-        """Save all node parameters to a JSON file in the given directory.
+        """Save all node parameters to a pickle file in the given directory.
+
+        Pickle is used so that arbitrary Python objects inside the aggregated
+        params dict (numpy arrays, sklearn internals, torch tensors, etc.) are
+        handled transparently.
 
         Args:
-            dir_path: Directory in which the JSON file will be written.
+            dir_path: Directory in which the pickle file will be written.
 
         """
         params = self.get_params()
-        file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
-        with Path(file_name).open("w") as f:
-            json.dump(params, f)
+        file_name = f"{dir_path}/{self.name}_v{self.version}_params.pkl"
+        with Path(file_name).open("wb") as f:
+            pickle.dump(params, f)
 
     def load_params_from_dir(self, dir_path: str) -> None:
-        """Load node parameters from a previously saved JSON file.
+        """Load node parameters from a previously saved pickle file.
 
         Args:
-            dir_path: Directory containing the parameter JSON file.
+            dir_path: Directory containing the parameter pickle file.
 
         """
-        file_name = f"{dir_path}/{self.name}_v{self.version}_params.json"
-        with Path(file_name).open("r") as f:
-            params = json.load(f)
+        file_name = f"{dir_path}/{self.name}_v{self.version}_params.pkl"
+        with Path(file_name).open("rb") as f:
+            params = pickle.load(f)
         self.set_params(params)
+
+    ## --- Public API for identity ---
+    def hash(self) -> str:
+        """Return a stable hex digest identifying this pipeline's layout and config.
+
+        The digest is a SHA-256 hash derived from the user-facing
+        :class:`PipelineConfig`: node names, node types, node configs,
+        edges (with port mappings), plus pipeline name, version, and
+        settings.  Nodes, edges, and port mappings are sorted canonically
+        so construction order does not perturb the result.
+
+        Per-instance UUIDs on :class:`NodeConfig` are declared as
+        ``PrivateAttr`` and are therefore excluded from :meth:`model_dump`,
+        keeping the hash content-addressable: two pipelines built from the
+        same :class:`PipelineConfig` produce the same hash.
+
+        Returns:
+            Hex-encoded SHA-256 digest of the canonical pipeline config.
+
+        """
+        payload = self.config.model_dump(mode="json")
+        payload["nodes"] = dict(sorted(payload["nodes"].items()))
+        payload["edges"] = sorted(
+            payload["edges"], key=lambda e: (e["source"], e["target"])
+        )
+        for edge in payload["edges"]:
+            edge["ports_map"] = sorted(edge["ports_map"])
+        blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
 
     #### Internal methods ####
     # --- Internal methods for pipeline management ---
@@ -1011,7 +1049,7 @@ class Pipeline:
         self,
         title: str | None = None,
         backend: str = "plotly",
-        figsize: tuple[int, int] = (12, 8),
+        figsize: tuple[int, int] | None = None,
     ):
         """Render the pipeline graph and display it interactively.
 
@@ -1019,7 +1057,8 @@ class Pipeline:
             title: Figure title.  Defaults to ``"Pipeline: <name>"``.
             backend: Rendering backend.  Currently only ``"plotly"`` is
                 supported.
-            figsize: ``(width, height)`` of the figure in inches.
+            figsize: ``(width, height)`` of the figure in inches.  ``None``
+                (the default) scales the figure with the layout shape.
 
         Raises:
             ValueError: If *backend* is not supported.
@@ -1040,7 +1079,7 @@ class Pipeline:
         self,
         title: str | None = None,
         backend: str = "plotly",
-        figsize: tuple[int, int] = (12, 8),
+        figsize: tuple[int, int] | None = None,
         *,
         full_html: bool = True,
     ) -> str:
@@ -1050,7 +1089,8 @@ class Pipeline:
             title: Figure title.  Defaults to ``"Pipeline: <name>"``.
             backend: Rendering backend.  Currently only ``"plotly"`` is
                 supported.
-            figsize: ``(width, height)`` of the figure in inches.
+            figsize: ``(width, height)`` of the figure in inches.  ``None``
+                (the default) scales the figure with the layout shape.
             full_html: When ``True``, return a self-contained HTML document;
                 otherwise return only the ``<div>`` fragment.
 

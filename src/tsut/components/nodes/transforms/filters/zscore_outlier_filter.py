@@ -11,9 +11,10 @@ at :meth:`transform` time.  Columns with zero standard deviation are skipped
 (Z-score is always 0, so they never produce outliers).
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
+from ray import tune
 import pandas as pd
 from pydantic import Field
 
@@ -62,7 +63,7 @@ class ZScoreOutlierFilterRunningConfig(TransformRunningConfig):
 class ZScoreOutlierFilterHyperParameters(TransformHyperParameters):
     """Tuneable hyperparameters for the ZScoreOutlierFilter."""
 
-    threshold: float = Field(
+    zscore_cutoff: float = Field(
         default=3.0,
         gt=0.0,
         description=(
@@ -71,20 +72,33 @@ class ZScoreOutlierFilterHyperParameters(TransformHyperParameters):
             "Lower values are more aggressive."
         ),
     )
+    threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Proportion of features that must be flagged as outliers "
+            "for a row to be removed (``strategy='remove'`` only). "
+            "A row is dropped when ``outlier_features / total_features > threshold``. "
+            "``0.0`` (default) drops any row with at least one outlier feature; "
+            "``1.0`` drops only rows where every feature is an outlier."
+        ),
+    )
     strategy: Literal["remove", "cap"] = Field(
         default="remove",
         description=(
             "How to handle detected outliers. "
-            "``'remove'`` drops any row containing at least one outlier. "
-            "``'cap'`` clips outlier values to ``mean ± threshold * std``."
+            "``'remove'`` drops rows whose outlier-feature proportion exceeds ``threshold``. "
+            "``'cap'`` clips outlier values to ``mean ± zscore_cutoff * std`` (per-value, ignores ``threshold``)."
         ),
     )
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, Any]] = {
-    "threshold": ("float", {"min": 0.5, "max": 10.0}),
-    "strategy": ("choice", ["remove", "cap"]),
+hyperparameter_space: dict[str, Any] = {
+    "zscore_cutoff": tune.uniform(0.5, 10.0),
+    "threshold": tune.uniform(0.0, 1.0),
+    "strategy": tune.choice(["remove", "cap"]),
 }
 
 
@@ -98,7 +112,7 @@ class ZScoreOutlierFilterConfig(
 
     hyperparameters: ZScoreOutlierFilterHyperParameters = Field(
         default_factory=ZScoreOutlierFilterHyperParameters,
-        description="Tuneable hyperparameters (threshold, strategy).",
+        description="Tuneable hyperparameters (zscore_cutoff, threshold, strategy).",
     )
     running_config: ZScoreOutlierFilterRunningConfig = Field(
         default_factory=ZScoreOutlierFilterRunningConfig,
@@ -180,7 +194,7 @@ class ZScoreOutlierFilter(
     Example
     -------
     >>> cfg = ZScoreOutlierFilterConfig(
-    ...     hyperparameters=ZScoreOutlierFilterHyperParameters(threshold=2.5),
+    ...     hyperparameters=ZScoreOutlierFilterHyperParameters(zscore_cutoff=2.5),
     ... )
     >>> node = ZScoreOutlierFilter(config=cfg)
     """
@@ -231,12 +245,12 @@ class ZScoreOutlierFilter(
             "output": (result, ctx),
         }
         is_remove = self._config.hyperparameters.strategy == "remove"
-        keep = ~outlier_mask.any(axis=1) if is_remove else None
+        keep = ~self._row_exceeds_threshold(outlier_mask) if is_remove else None
         for port in ("target", "sliced"):
             if port in data:
                 port_df, port_ctx = data[port]
                 if keep is not None:
-                    port_df = port_df.loc[keep].reset_index(drop=True)
+                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(drop=True)
                 outputs[port] = (port_df, port_ctx)
         return outputs
 
@@ -265,7 +279,19 @@ class ZScoreOutlierFilter(
 
         # Columns with NaN std are treated as having Z-score 0 (no outliers).
         z_scores = target.sub(mean, axis=1).div(std, axis=1).fillna(0.0)
-        return z_scores.abs().gt(self._config.hyperparameters.threshold)
+        return z_scores.abs().gt(self._config.hyperparameters.zscore_cutoff)
+
+    def _row_exceeds_threshold(self, outlier_mask: pd.DataFrame) -> pd.Series:
+        """Return a boolean Series: ``True`` where a row should be removed.
+
+        A row is flagged when the proportion of outlier features strictly
+        exceeds the configured ``threshold``.
+        """
+        num_cols = outlier_mask.shape[1]
+        if num_cols == 0:
+            return pd.Series(data=False, index=outlier_mask.index)
+        proportion = outlier_mask.sum(axis=1) / num_cols
+        return proportion > self._config.hyperparameters.threshold
 
     def _apply_strategy(
         self,
@@ -274,11 +300,13 @@ class ZScoreOutlierFilter(
     ) -> pd.DataFrame:
         """Handle detected outliers according to the configured strategy."""
         if self._config.hyperparameters.strategy == "remove":
-            return df.loc[~outlier_mask.any(axis=1)].reset_index(drop=True)
+            mask = self._row_exceeds_threshold(outlier_mask)
+            filtered = cast("pd.DataFrame", df.loc[~mask])
+            return filtered.reset_index(drop=True)
 
         # strategy == "cap"
         result = df.copy()
-        k = self._config.hyperparameters.threshold
+        k = self._config.hyperparameters.zscore_cutoff
         for col in outlier_mask.columns:
             mu  = self._params["mean"][col]
             sig = self._params["std"].get(col, np.nan)

@@ -2,6 +2,7 @@
 
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 
+from .column_order import ColumnOrder, ColumnOrderConfig, ColumnOrderRunningConfig
 from .feature_concatenate import FeatureConcatenate, FeatureConcatenateConfig
 from .row_concatenate import RowConcatenate, RowConcatenateConfig
 
@@ -17,4 +18,10 @@ def register_nodes() -> None:
         name="FeatureConcatenate",
         node_class=FeatureConcatenate,
         node_config_class=FeatureConcatenateConfig,
+    )
+    NODE_REGISTRY.register(
+        name="ColumnOrder",
+        node_class=ColumnOrder,
+        node_config_class=ColumnOrderConfig,
+        running_config_class=ColumnOrderRunningConfig,
     )

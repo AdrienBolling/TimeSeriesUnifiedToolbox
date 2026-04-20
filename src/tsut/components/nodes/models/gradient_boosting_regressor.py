@@ -1,0 +1,279 @@
+"""GradientBoostingRegressor model node for the TSUT Framework.
+
+Wraps ``sklearn.ensemble.GradientBoostingRegressor`` and exposes it as a TSUT
+:class:`~tsut.core.nodes.models.model.Model` node.  The node expects two
+input ports:
+
+* ``X`` – feature matrix ``(batch, features)`` as a numpy array
+* ``y`` – target matrix ``(batch, targets)`` as a numpy array (training / evaluation only)
+
+and emits one output port:
+
+* ``pred`` – predicted values ``(batch, targets)`` as a numpy array
+
+Note: sklearn's GradientBoostingRegressor does not support multi-output
+regression natively, so the prediction is always 1-D and is reshaped to 2-D
+for downstream consistency.
+"""
+
+from typing import Any, Literal
+
+import numpy as np
+from ray import tune
+from pydantic import Field
+from sklearn.ensemble import GradientBoostingRegressor as SklearnGradientBoostingRegressor
+
+from tsut.core.common.data.data import (
+    ArrayLikeEnum,
+    DataCategoryEnum,
+    DataStructureEnum,
+    TabularDataContext,
+    tabular_context_from_dict_dump,
+)
+from tsut.components.utils.sklearn_params import (
+    get_sklearn_fitted_params,
+    set_sklearn_fitted_params,
+)
+from tsut.core.common.enums import NodeExecutionMode
+from tsut.core.nodes.models.model import (
+    Model,
+    ModelConfig,
+    ModelHyperParameters,
+    ModelMetadata,
+    ModelRunningConfig,
+)
+from tsut.core.nodes.node import Port
+
+
+class GradientBoostingRegressorMetadata(ModelMetadata):
+    """Metadata for the GradientBoostingRegressor model node."""
+
+    node_name: str = "GradientBoostingRegressor"
+    description: str = (
+        "Gradient Boosting Regressor based on scikit-learn. "
+        "Builds an additive model of shallow decision trees trained "
+        "sequentially to correct the residuals of the ensemble."
+    )
+
+
+class GradientBoostingRegressorHyperParameters(ModelHyperParameters):
+    """Tuneable hyperparameters for the GradientBoostingRegressor.
+
+    These are the parameters that make sense to explore during
+    hyperparameter search.  All other sklearn knobs live in
+    :class:`GradientBoostingRegressorRunningConfig`.
+    """
+
+    n_estimators: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Number of boosting stages (trees) to fit. "
+            "More stages reduce bias but increase the risk of overfitting "
+            "and training time."
+        ),
+    )
+    max_depth: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Maximum depth of each individual regression tree. "
+            "Shallow trees (3–5) act as weak learners and are the typical "
+            "choice for gradient boosting."
+        ),
+    )
+    learning_rate: float = Field(
+        default=0.1,
+        gt=0,
+        description=(
+            "Shrinkage factor applied to each tree's contribution. "
+            "Smaller values require more boosting stages but often "
+            "yield better generalisation."
+        ),
+    )
+
+
+class GradientBoostingRegressorRunningConfig(ModelRunningConfig):
+    """Execution-time options for the GradientBoostingRegressor.
+
+    These affect training behaviour but are usually held fixed during
+    hyperparameter search.
+    """
+
+    loss: Literal[
+        "squared_error",
+        "absolute_error",
+        "huber",
+        "quantile",
+    ] = Field(
+        default="squared_error",
+        description=(
+            "Loss function to optimise. "
+            "``'squared_error'`` minimises MSE. "
+            "``'absolute_error'`` minimises MAD. "
+            "``'huber'`` is a combination of both, robust to outliers. "
+            "``'quantile'`` allows quantile regression."
+        ),
+    )
+    random_state: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Seed for the internal random-number generator. "
+            "Set to a non-negative integer for fully reproducible training runs. "
+            "``None`` uses the global numpy random state."
+        ),
+    )
+
+
+# Exposed at module level so external tuners can discover the search space.
+hyperparameter_space: dict[str, Any] = {
+    "n_estimators": tune.choice([50, 100, 200, 500]),
+    "max_depth": tune.choice([3, 5, 7, 10]),
+    "learning_rate": tune.choice([0.01, 0.05, 0.1, 0.2]),
+}
+
+# Type alias for the serialisable param dict used by get_params / set_params.
+type _GBRParams = dict[str, Any]
+
+
+class GradientBoostingRegressorConfig(
+    ModelConfig[
+        GradientBoostingRegressorHyperParameters,
+        GradientBoostingRegressorRunningConfig,
+    ]
+):
+    """Full configuration for the GradientBoostingRegressor node."""
+
+    hyperparameters: GradientBoostingRegressorHyperParameters = Field(
+        default_factory=GradientBoostingRegressorHyperParameters,
+        description="Tuneable hyperparameters (n_estimators, max_depth, learning_rate).",
+    )
+    running_config: GradientBoostingRegressorRunningConfig = Field(
+        default_factory=GradientBoostingRegressorRunningConfig,
+        description="Execution-time options (loss, random_state).",
+    )
+    in_ports: dict[str, Port] = Field(
+        default={
+            "X": Port(
+                arr_type=ArrayLikeEnum.NUMPY,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.MIXED,
+                data_shape="batch features",
+                desc="Input feature matrix (batch, features).",
+            ),
+            "y": Port(
+                arr_type=ArrayLikeEnum.NUMPY,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch targets",
+                mode=[NodeExecutionMode.TRAINING, NodeExecutionMode.EVALUATION],
+                desc="Target values (batch, targets). Required during training and evaluation only.",
+            ),
+        },
+        description="Input ports: 'X' (features, all modes) and 'y' (targets, training/evaluation).",
+    )
+    out_ports: dict[str, Port] = Field(
+        default={
+            "pred": Port(
+                arr_type=ArrayLikeEnum.NUMPY,
+                data_structure=DataStructureEnum.TABULAR,
+                data_category=DataCategoryEnum.NUMERICAL,
+                data_shape="batch targets",
+                desc="Predicted values (batch, targets).",
+            ),
+        },
+        description="Output ports: 'pred' (predicted targets).",
+    )
+
+
+class GradientBoostingRegressorNode(
+    Model[
+        np.ndarray,
+        TabularDataContext,
+        np.ndarray,
+        TabularDataContext,
+        _GBRParams,
+    ]
+):
+    """Gradient Boosting Regressor model node.
+
+    The underlying sklearn estimator is built from
+    :class:`GradientBoostingRegressorConfig` on initialisation.  The target
+    context (column names, dtypes, categories) is captured during
+    :meth:`fit` and replayed on every :meth:`predict` call so that the
+    output :class:`~tsut.core.common.data.data.TabularDataContext` is
+    always consistent with the training labels.
+    """
+
+    metadata = GradientBoostingRegressorMetadata()
+    hyperparameter_space = hyperparameter_space
+
+    def __init__(self, *, config: GradientBoostingRegressorConfig) -> None:
+        """Construct the sklearn estimator from *config*."""
+        self._config = config
+        self._model = SklearnGradientBoostingRegressor(
+            n_estimators=config.hyperparameters.n_estimators,
+            max_depth=config.hyperparameters.max_depth,
+            learning_rate=config.hyperparameters.learning_rate,
+            loss=config.running_config.loss,
+            random_state=config.running_config.random_state,
+        )
+        # Populated during fit; used to rebuild the output context at
+        # prediction time without requiring access to the training data.
+        self._target_context_dump: dict[str, list[str]] = {}
+
+    # --- Model interface --------------------------------------------------
+
+    def fit(self, data: dict[str, tuple[np.ndarray, TabularDataContext]]) -> None:
+        """Fit the Gradient Boosting Regressor on the provided *(X, y)* pair.
+
+        Parameters:
+            data: Must contain keys ``"X"`` (features) and ``"y"`` (targets).
+        """
+        X, _ = data["X"]
+        y, y_ctx = data["y"]
+        # sklearn GBR does not support multi-output; pass y as-is (must be 1-D
+        # or column vector).  If y is 2-D with a single column, ravel it.
+        if y.ndim == 2 and y.shape[1] == 1:
+            y = y.ravel()
+        self._model.fit(X, y)
+        self._target_context_dump = y_ctx.dump_dict
+
+    def predict(
+        self, data: dict[str, tuple[np.ndarray, TabularDataContext]]
+    ) -> dict[str, tuple[np.ndarray, TabularDataContext]]:
+        """Predict using the fitted Gradient Boosting Regressor.
+
+        Parameters:
+            data: Must contain key ``"X"`` (features).  ``"y"`` is ignored if
+                present (inference / evaluation phases).
+
+        Returns:
+            ``{"pred": (predictions, context)}`` where predictions is a
+            2-D array ``(batch, 1)``.
+        """
+        X, _ = data["X"]
+        pred: np.ndarray = self._model.predict(X)
+        # sklearn GBR always returns 1-D output; reshape to 2-D so downstream
+        # nodes always see a consistent shape.
+        if pred.ndim == 1:
+            pred = pred[:, np.newaxis]
+        pred_ctx = tabular_context_from_dict_dump(self._target_context_dump)
+        return {"pred": (pred, pred_ctx)}
+
+    def get_params(self) -> _GBRParams:
+        """Return the serialisable state of this node.
+
+        Includes both the sklearn estimator's internal parameters and the
+        captured target context needed to reconstruct predictions.
+        """
+        return {
+            "fitted_params": get_sklearn_fitted_params(self._model),
+            "target_context": self._target_context_dump,
+        }
+
+    def set_params(self, params: _GBRParams) -> None:
+        """Restore node state from a previously serialised param dict."""
+        set_sklearn_fitted_params(self._model, params["fitted_params"])
+        self._target_context_dump = params["target_context"]

@@ -2,6 +2,7 @@
 
 from typing import TypeGuard
 
+import torch
 from pydantic import BaseModel
 
 from tsut.core.common.typechecking.protocols import (
@@ -12,9 +13,10 @@ from tsut.core.common.typechecking.protocols import (
     HasParamsNode,
     HasRunningConfigConfig,
     HasRunningConfigNode,
+    IsValidTorchModule,
 )
 from tsut.core.nodes.data_sink.sink import Sink
-from tsut.core.nodes.node import Node, NodeConfig
+from tsut.core.nodes.node import Node, NodeConfig, NodeType
 
 
 # has Hyperparameters typeguards
@@ -151,7 +153,7 @@ def is_sink_node(obj: Node) -> TypeGuard[Sink]:
         ``True`` if *obj* has node type ``"SINK"`` and is an instance of :class:`Sink`.
 
     """
-    return obj.config.node_type == "SINK" and isinstance(obj, Sink)
+    return obj.config.node_type == NodeType.SINK and isinstance(obj, Sink)
 
 
 # is List typeguard
@@ -179,6 +181,24 @@ def accepts_inputs_source_node(node: Node) -> TypeGuard[AcceptsInputsSourceNode]
         ``True`` if *node* is a ``SOURCE`` node with ``accepts_inputs`` set.
 
     """
-    if hasattr(node, "accepts_inputs") and node.config.node_type == "SOURCE":
+    if hasattr(node, "accepts_inputs") and node.config.node_type == NodeType.SOURCE:
         return node.accepts_inputs  # type: ignore
     return False
+
+
+# is Valid Torch Module typeguard
+def is_valid_torch_module(obj: type) -> TypeGuard[IsValidTorchModule]:
+    """Check whether *obj* is a valid torch.nn.Module with a train_module method.
+
+    Args:
+        obj: The object to inspect.
+
+    Returns:
+        ``True`` if *obj* is a subclass of torch.nn.Module and has a callable train_module method.
+
+    """
+    return (
+        issubclass(obj, torch.nn.Module)
+        and hasattr(obj, "train_module")
+        and callable(obj.train_module)
+    )

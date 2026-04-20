@@ -16,7 +16,7 @@ The two retained column lists are persisted via :meth:`get_params` /
 re-fitting.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 from pydantic import Field
@@ -238,7 +238,7 @@ class DataCategoryFilter(
         """Slice *df* and *ctx* to the requested *columns*."""
         keep = set(columns)
         return (
-            df[columns],
+            cast("pd.DataFrame", df[columns]),
             TabularDataContext(
                 columns=[c for c in ctx.columns if c in keep],
                 dtypes=[

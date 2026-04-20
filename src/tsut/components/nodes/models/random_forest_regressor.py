@@ -19,8 +19,13 @@ from typing import Any, Literal
 
 import numpy as np
 from pydantic import Field
+from ray import tune
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
 
+from tsut.components.utils.sklearn_params import (
+    get_sklearn_fitted_params,
+    set_sklearn_fitted_params,
+)
 from tsut.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
@@ -111,9 +116,9 @@ class RandomForestRegressorRunningConfig(ModelRunningConfig):
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, list[Any] | dict[str, Any]]] = {
-    "n_estimators": ("choice", [50, 100, 200, 500]),
-    "max_depth": ("choice", [None, 5, 10, 20, 30]),
+hyperparameter_space: dict[str, Any] = {
+    "n_estimators": tune.choice([50, 100, 200, 500]),
+    "max_depth": tune.choice([None, 5, 10, 20, 30]),
 }
 
 # Type alias for the serialisable param dict used by get_params / set_params.
@@ -256,11 +261,11 @@ class RandomForestRegressorNode(
         captured target context needed to reconstruct predictions.
         """
         return {
-            "model_params": self._model.get_params(),
+            "fitted_params": get_sklearn_fitted_params(self._model),
             "target_context": self._target_context_dump,
         }
 
     def set_params(self, params: _RFParams) -> None:
         """Restore node state from a previously serialised param dict."""
-        self._model.set_params(**params["model_params"])
+        self._model = set_sklearn_fitted_params(self._model, params["fitted_params"])
         self._target_context_dump = params["target_context"]

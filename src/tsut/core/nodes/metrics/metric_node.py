@@ -3,9 +3,10 @@
 from abc import abstractmethod
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from torchmetrics import Metric
 
+from tsut.core.common.enums import NodeExecutionMode
 from tsut.core.nodes.node import Node, NodeConfig, NodeMetadata, NodeType, Port
 
 
@@ -34,6 +35,24 @@ class MetricNodeConfig[R](NodeConfig):
     in_ports: dict[str, Port] = {}
     out_ports: dict[str, Port] = {}
     running_config: R | None = None
+
+    @model_validator(mode="after")
+    def _default_ports_to_eval_only(self) -> "MetricNodeConfig[R]":
+        """Narrow port modes to ``evaluation`` unless the metric opts out.
+
+        Metric nodes exist to score a run after the forward pass, so by
+        default their ports should only be walked during evaluation.
+        We only rewrite ports that still carry the :class:`Port` default
+        (``["all"]``) — explicit overrides by the metric author or user
+        are preserved.
+        """
+        port_default = [NodeExecutionMode.ALL]
+        eval_only = [NodeExecutionMode.EVALUATION]
+        for ports in (self.in_ports, self.out_ports):
+            for port in ports.values():
+                if port.mode == port_default:
+                    port.mode = list(eval_only)
+        return self
 
 
 class MetricNodeMetadata(NodeMetadata):

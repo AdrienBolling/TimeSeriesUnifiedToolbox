@@ -22,15 +22,40 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
+def _longest_path_length_to(graph: nx.DiGraph, target: str) -> dict[str, int]:
+    """Longest-path distance in a DAG from every reachable node to ``target``.
+
+    Uses DP over reverse topological order: ``dist[target] = 0`` and
+    ``dist[node] = 1 + max(dist[succ])`` over successors with a known
+    distance.  ``nx.shortest_path_length`` collapses parallel chains to
+    the shortest branch, which lets edges skip backwards over shorter
+    siblings during layout; the longest-path variant pushes each node
+    as far right as its deepest successor allows so every ancestor
+    lands strictly left of every descendant.
+    """
+    dist: dict[str, int] = {target: 0}
+    for node in reversed(list(nx.topological_sort(graph))):
+        if node == target:
+            continue
+        successor_depths = [
+            dist[succ] + 1 for succ in graph.successors(node) if succ in dist
+        ]
+        if successor_depths:
+            dist[node] = max(successor_depths)
+    return dist
+
+
 def split_execution_graph_into_columns(
     pipeline: Pipeline,
 ) -> dict[int, set[str]]:
     """Group nodes into layout columns for visualization.
 
     The main execution graph is laid out from left to right using
-    shortest-path distance to the sink node.  Source nodes are forced to
-    the leftmost column and metric nodes into their own column on the
-    right.
+    longest-path distance to the sink node — this guarantees that a
+    node always sits to the left of every one of its successors, so
+    edges never skip backwards across columns.  Source nodes are
+    forced to the leftmost column and metric nodes into their own
+    column on the right.
 
     Args:
         pipeline: Compiled pipeline whose graph will be partitioned.
@@ -47,12 +72,13 @@ def split_execution_graph_into_columns(
     sink_node = pipeline.sink_node_name
     node_columns: dict[str, int | None] = dict.fromkeys(main_graph.nodes)
 
-    shortest_paths_to_sink = nx.shortest_path_length(main_graph, target=sink_node)
     if sink_node is None:
         raise ValueError("Pipeline must have a sink node to compute layout.")
-    max_depth = max(shortest_paths_to_sink.values())
 
-    for node, depth in shortest_paths_to_sink.items():
+    longest_paths_to_sink = _longest_path_length_to(main_graph, sink_node)
+    max_depth = max(longest_paths_to_sink.values())
+
+    for node, depth in longest_paths_to_sink.items():
         if node is not None:
             node_columns[node] = -int(depth)
 
@@ -762,10 +788,95 @@ def _straight_edge_polyline(
 # =============================================================================
 
 
+def _filter_node_data_for_mode(data: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Return a copy of serialized node data with ports filtered by mode.
+
+    Ports whose ``mode`` list does not include the requested execution
+    mode (or ``"all"``) are dropped so that hover tooltips only show
+    the ports relevant to the currently displayed execution mode.
+    When *mode* is ``"all"`` the data is returned unchanged.
+    """
+    all_mode = str(NodeExecutionMode.ALL)
+    if mode == all_mode:
+        return data
+    filtered = dict(data)
+    for port_key in ("in_ports", "out_ports"):
+        ports = filtered.get(port_key)
+        if not isinstance(ports, dict):
+            continue
+        filtered[port_key] = {
+            pname: pdata
+            for pname, pdata in ports.items()
+            if _port_active(pdata, mode, all_mode)
+        }
+    return filtered
+
+
+def _port_active(port_data: Any, mode: str, all_mode: str) -> bool:
+    """Check whether a serialized port is active in the given mode."""
+    if not isinstance(port_data, dict):
+        return True
+    port_modes = port_data.get("mode", [])
+    if not isinstance(port_modes, (list, tuple)):
+        return True
+    str_modes = [str(m) for m in port_modes]
+    return all_mode in str_modes or mode in str_modes
+
+
+def _build_node_label_annotations(
+    names: list[str],
+    xs: list[float],
+    ys: list[float],
+    hover_html: list[str],
+) -> list[dict[str, Any]]:
+    """Build annotation dicts for node label boxes.
+
+    Returns a list of plain dicts (not Plotly objects) so they can be
+    swapped via relayout when the execution-mode dropdown changes.
+    """
+    annotations: list[dict[str, Any]] = []
+    for name, x, y, hover in zip(names, xs, ys, hover_html, strict=True):
+        annotations.append(
+            {
+                "x": x,
+                "y": y,
+                "text": str(name),
+                "showarrow": False,
+                "yshift": 22,
+                "bgcolor": "rgba(245,245,245,0.92)",
+                "bordercolor": "rgba(0,0,0,0.35)",
+                "borderwidth": 1,
+                "borderpad": 3,
+                "font": {"size": 11, "color": "black"},
+                "hovertext": hover,
+                "hoverlabel": {
+                    "bgcolor": "rgba(30,30,30,0.95)",
+                    "font": {"color": "white", "size": 12},
+                },
+            }
+        )
+    return annotations
+
+
+def _auto_figsize(columns: dict[int, set[str]]) -> tuple[int, int]:
+    """Pick a ``(width, height)`` in inches that fits the layout shape.
+
+    Width scales with the number of columns (so long pipelines get wider
+    canvases), height with the widest column (so fan-outs have room to
+    spread vertically).  The floors keep tiny pipelines from rendering
+    into a sliver.
+    """
+    num_columns = max(len(columns), 1)
+    max_rows = max((len(s) for s in columns.values()), default=1)
+    width = max(8, num_columns * 2)
+    height = max(12, int(max_rows * 4))
+    return (width, height)
+
+
 def render_pipeline_graph_plotly(
     pipeline: Pipeline,
     title: str = "Pipeline Graph",
-    figsize: tuple[int, int] = (12, 6),
+    figsize: tuple[int, int] | None = None,
     execution_mode: str | None = None,
 ) -> go.Figure:
     """Render the pipeline graph with Plotly and a dropdown to select execution mode.
@@ -774,7 +885,9 @@ def render_pipeline_graph_plotly(
         pipeline: Compiled pipeline to render.
         title: Figure title.
         figsize: ``(width, height)`` in logical inches (multiplied by 100 for
-            pixel dimensions).
+            pixel dimensions).  ``None`` (the default) scales width with
+            the number of layout columns and height with the widest
+            column so long pipelines don't get crammed into a fixed box.
         execution_mode: Initial execution mode for the dropdown.  ``None``
             defaults to ``"all"``.
 
@@ -788,6 +901,8 @@ def render_pipeline_graph_plotly(
     node_configs = pipeline.internal_config.nodes
 
     columns = split_execution_graph_into_columns(pipeline=pipeline)
+    if figsize is None:
+        figsize = _auto_figsize(columns)
     pos = nx.multipartite_layout(graph, subset_key=columns)
     y_center = _vertical_center(pos)
 
@@ -866,11 +981,13 @@ def render_pipeline_graph_plotly(
                     steps=100,
                 )
 
+            # Arrow marker only on the last sample (``angleref="previous"``
+            # rotates it along the tangent so curved edges still point right).
             fig.add_trace(
                 go.Scatter(
                     x=xs,
                     y=ys,
-                    mode="lines",
+                    mode="lines+markers",
                     line={
                         "color": edge_color_mapping.get((source, target), "gray"),
                         "width": 2,
@@ -879,6 +996,14 @@ def render_pipeline_graph_plotly(
                             "solid",
                         ),
                     },
+                    marker={
+                        "size": [0] * (len(xs) - 1) + [14],
+                        "symbol": "arrow",
+                        "angleref": "previous",
+                        "color": edge_color_mapping.get((source, target), "gray"),
+                        "standoff": 10,
+                    },
+                    opacity=0.6,
                     hovertemplate=_edge_hover_html(source, target, edge.ports_map)
                     + "<extra></extra>",
                     showlegend=False,
@@ -888,42 +1013,54 @@ def render_pipeline_graph_plotly(
             edge_trace_indices_by_mode[mode].append(len(fig.data) - 1)
 
     # -------------------------------------------------------------------------
-    # Node trace
+    # Node traces (one per execution mode for mode-filtered hover)
     # -------------------------------------------------------------------------
     nodes_in_order = list(graph.nodes)
     node_x = [float(pos[node][0]) for node in nodes_in_order]
     node_y = [float(pos[node][1]) for node in nodes_in_order]
-    node_hover = [
-        _node_hover_html(node, node_data_mapping.get(node, {}))
-        for node in nodes_in_order
-    ]
     node_symbols = [
         marker_symbol_map.get(node_marker_mapping.get(node, "o"), "circle")
         for node in nodes_in_order
     ]
     node_colors = [node_color_mapping.get(node, "white") for node in nodes_in_order]
 
-    fig.add_trace(
-        go.Scatter(
-            x=node_x,
-            y=node_y,
-            mode="markers+text",
-            text=[str(node) for node in nodes_in_order],
-            textposition="top center",
-            hovertemplate="%{customdata}<extra></extra>",
-            customdata=node_hover,
-            marker={
-                "size": 28,
-                "color": node_colors,
-                "symbol": node_symbols,
-                "line": {"color": "black", "width": 1},
-            },
-            textfont={"size": 11, "color": "black"},
-            showlegend=False,
-            visible=True,
+    node_hover_by_mode: dict[str, list[str]] = {}
+    for mode in mode_order:
+        node_hover_by_mode[mode] = [
+            _node_hover_html(
+                node,
+                _filter_node_data_for_mode(node_data_mapping.get(node, {}), mode),
+            )
+            for node in nodes_in_order
+        ]
+
+    annotations_by_mode: dict[str, list[dict[str, Any]]] = {
+        mode: _build_node_label_annotations(
+            nodes_in_order, node_x, node_y, node_hover_by_mode[mode]
         )
-    )
-    node_trace_index = len(fig.data) - 1
+        for mode in mode_order
+    }
+
+    node_trace_indices_by_mode: dict[str, int] = {}
+    for mode in mode_order:
+        fig.add_trace(
+            go.Scatter(
+                x=node_x,
+                y=node_y,
+                mode="markers",
+                hovertemplate="%{customdata}<extra></extra>",
+                customdata=node_hover_by_mode[mode],
+                marker={
+                    "size": 28,
+                    "color": node_colors,
+                    "symbol": node_symbols,
+                    "line": {"color": "black", "width": 1},
+                },
+                showlegend=False,
+                visible=(mode == initial_mode),
+            )
+        )
+        node_trace_indices_by_mode[mode] = len(fig.data) - 1
 
     # -------------------------------------------------------------------------
     # Legend entries
@@ -1002,7 +1139,6 @@ def render_pipeline_graph_plotly(
     # Dropdown visibility masks
     # -------------------------------------------------------------------------
     always_visible = {
-        node_trace_index,
         separator_trace_index,
         *node_legend_trace_indices,
         *edge_legend_trace_indices,
@@ -1020,6 +1156,8 @@ def render_pipeline_graph_plotly(
         for idx in edge_trace_indices_by_mode[mode]:
             visible_mask[idx] = True
 
+        visible_mask[node_trace_indices_by_mode[mode]] = True
+
         label = mode.capitalize()
 
         buttons.append(
@@ -1036,7 +1174,8 @@ def render_pipeline_graph_plotly(
                             ),
                             "x": 0.5,
                             "xanchor": "center",
-                        }
+                        },
+                        "annotations": annotations_by_mode[mode],
                     },
                 ],
             }
@@ -1054,6 +1193,7 @@ def render_pipeline_graph_plotly(
             "x": 0.5,
             "xanchor": "center",
         },
+        annotations=annotations_by_mode[initial_mode],
         width=width,
         height=height,
         plot_bgcolor="white",
@@ -1061,7 +1201,6 @@ def render_pipeline_graph_plotly(
         hoverlabel={
             "bgcolor": "rgba(30,30,30,0.95)",
             "font": {"color": "white", "size": 12},
-            "align": "left",
         },
         margin={"l": 20, "r": 20, "t": 80, "b": 20},
         xaxis={"visible": False},

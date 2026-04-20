@@ -13,6 +13,7 @@ from tsut.core.common.data.data import (
     DataCategoryEnum,
     DataStructureEnum,
 )
+from tsut.core.common.enums import NodeExecutionMode
 from tsut.core.common.mixins.mixin import MixinSettings
 
 P = ParamSpec("P")
@@ -71,14 +72,12 @@ class Port(BaseModel):
     """
 
     arr_type: ArrayLikeEnum
-    data_structure: DataStructureEnum = (
-        DataStructureEnum.DATA
-    )
+    data_structure: DataStructureEnum = DataStructureEnum.DATA
     data_category: DataCategoryEnum
     data_shape: str
     optional: bool = False
     desc: str
-    mode: list[str] = ["all"]
+    mode: list[NodeExecutionMode] = [NodeExecutionMode.ALL]
 
 
 class NodeConfig(BaseModel):
@@ -174,6 +173,13 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
         if not self._config:
             self._config = config
 
+        self._execution_mode = NodeExecutionMode.DEFAULT
+
+    @property
+    def execution_mode(self) -> NodeExecutionMode:
+        """Get the current execution mode of the node."""
+        return self._execution_mode
+
     @property
     def in_ports(self) -> dict[str, Port]:
         """Get the input ports of the Node."""
@@ -193,6 +199,15 @@ class Node[D_I, D_C_I, D_O, D_C_O](ABC, metaclass=MetaPostInitHook):
     def config(self) -> NodeConfig:
         """Get the configuration of the Node."""
         return self._config
+
+    def set_execution_mode(self, mode: NodeExecutionMode) -> None:
+        """Set the execution mode of the node.
+
+        Args:
+            mode: The execution mode to set for the node.
+
+        """
+        self._execution_mode = mode
 
     def __init_subclass__(cls, *args: ParamSpec, **kwargs: ParamSpec) -> None:
         """Validate subclass definition and wrap its ``__init__``.

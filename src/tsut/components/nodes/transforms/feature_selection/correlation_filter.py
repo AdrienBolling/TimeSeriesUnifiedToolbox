@@ -4,11 +4,30 @@ Removes highly correlated features by computing a pair-wise correlation
 matrix during :meth:`fit` and greedily dropping one column from every pair
 whose absolute correlation exceeds a configurable threshold.
 
-The greedy strategy iterates columns left-to-right and marks a column for
-removal the first time it correlates above the threshold with a column that
-has not already been marked.  This is equivalent to scikit-learn's
-variance-inflation heuristic and preserves the *first* feature in every
-correlated group.
+Greedy strategy (order-dependent!)
+----------------------------------
+The filter iterates candidate columns left-to-right. For every pair
+``(i, j)`` with ``i < j`` whose ``|corr| > threshold``, column *j* is
+marked for removal (provided column *i* has not already been marked).
+
+This means the **input column order directly determines which column of a
+correlated pair survives**: earlier columns are retained, later columns
+are dropped. Swapping the order of two highly-correlated columns in the
+input DataFrame will swap which one the filter keeps.
+
+Preferred columns
+-----------------
+To override this purely positional tie-breaking, the running config
+exposes ``preferred_columns`` — columns that should be kept in priority
+whenever possible. Internally the candidate set is reordered so that
+preferred columns come first (in their original relative order), then the
+rest (also in original relative order). The greedy pass then naturally
+keeps preferred columns over non-preferred ones in every correlated pair.
+
+When two preferred columns correlate with each other, the positional rule
+still applies within the preferred group (the earlier one survives).
+The final output DataFrame preserves the **original** column order of the
+input — reordering is only used internally for drop selection.
 
 * Input  – a ``(batch, feature)`` **numerical** DataFrame.
 * Output – the same DataFrame with redundant features removed.
@@ -19,9 +38,10 @@ methods.
 """
 
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
+from ray import tune
 import pandas as pd
 from pydantic import Field
 
@@ -66,6 +86,18 @@ class CorrelationFilterRunningConfig(TransformRunningConfig):
             "Columns not in this list are always kept in the output."
         ),
     )
+    preferred_columns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Columns to keep in priority when resolving correlated pairs. "
+            "Because the greedy drop strategy is order-dependent (later "
+            "columns are dropped), listing a column here moves it to the "
+            "front of the internal drop-selection order so it survives "
+            "over non-preferred correlates. Unknown names (not present in "
+            "the candidate set) are silently ignored. The output DataFrame "
+            "still follows the original input column order."
+        ),
+    )
 
 
 class CorrelationFilterHyperParameters(TransformHyperParameters):
@@ -94,9 +126,9 @@ class CorrelationFilterHyperParameters(TransformHyperParameters):
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, Any]] = {
-    "threshold": ("float", {"min": 0.5, "max": 1.0}),
-    "method": ("choice", ["pearson", "spearman", "kendall"]),
+hyperparameter_space: dict[str, Any] = {
+    "threshold": tune.uniform(0.5, 1.0),
+    "method": tune.choice(["pearson", "spearman", "kendall"]),
 }
 
 
@@ -114,7 +146,7 @@ class CorrelationFilterConfig(
     )
     running_config: CorrelationFilterRunningConfig = Field(
         default_factory=CorrelationFilterRunningConfig,
-        description="Run-time options (filtering_columns).",
+        description="Run-time options (filtering_columns, preferred_columns).",
     )
     in_ports: dict[str, Port] = Field(
         default={
@@ -158,14 +190,29 @@ class CorrelationFilter(
 
     During :meth:`fit`, computes the pair-wise correlation matrix and
     greedily marks columns for removal when their absolute correlation
-    with an already-kept column exceeds the threshold.  The first column
-    in every correlated group is always retained.
+    with an already-kept column exceeds the threshold.
+
+    Tie-breaking
+    ------------
+    The greedy pass is **order-dependent**: for every correlated pair the
+    *earlier* column in the iteration order survives and the *later* one
+    is dropped. By default that iteration order is the input column order,
+    so input column order directly determines which column survives a
+    correlated pair.
+
+    Setting ``running_config.preferred_columns`` moves those names to the
+    front of the internal iteration order (preserving their relative
+    input order), so they are kept over non-preferred correlates. The
+    output DataFrame still follows the original input column order.
 
     Example
     -------
     >>> cfg = CorrelationFilterConfig(
     ...     hyperparameters=CorrelationFilterHyperParameters(
     ...         threshold=0.9, method="spearman"
+    ...     ),
+    ...     running_config=CorrelationFilterRunningConfig(
+    ...         preferred_columns=["target_feature"],
     ...     ),
     ... )
     >>> node = CorrelationFilter(config=cfg)
@@ -198,11 +245,25 @@ class CorrelationFilter(
         threshold = self._config.hyperparameters.threshold
         method = self._config.hyperparameters.method
 
-        corr_matrix = self._compute_correlation(candidates, method)
-        cols_to_drop = self._greedy_drop(candidates.columns.tolist(), corr_matrix, threshold)
+        original_candidate_cols = candidates.columns.tolist()
+        preference_ordered_cols = self._apply_preference(
+            original_candidate_cols,
+            self._config.running_config.preferred_columns,
+        )
+        # Reorder candidates so preferred columns come first; the greedy
+        # pass keeps earlier columns, so preferred columns survive any
+        # correlated pair involving a non-preferred column.
+        reordered = candidates[preference_ordered_cols]
 
+        corr_matrix = self._compute_correlation(reordered, method)
+        cols_to_drop = self._greedy_drop(
+            preference_ordered_cols, corr_matrix, threshold
+        )
+
+        # Output column order follows the ORIGINAL input order, not the
+        # preference-reordered one used for drop selection.
         surviving_cols = [
-            c for c in candidates.columns if c not in cols_to_drop
+            c for c in original_candidate_cols if c not in cols_to_drop
         ]
 
         # Columns not in the candidate set are always kept.
@@ -229,7 +290,7 @@ class CorrelationFilter(
 
         out_ctx = deepcopy(ctx)
         out_ctx.remove_columns(dropped)
-        return {"output": (df[keep], out_ctx)}
+        return {"output": (cast("pd.DataFrame", df[keep]), out_ctx)}
 
     def get_params(self) -> _CorrelationFilterParams:
         """Return the list of columns that survived filtering."""
@@ -241,6 +302,23 @@ class CorrelationFilter(
         self._fitted = True
 
     # --- Private helpers --------------------------------------------------
+
+    @staticmethod
+    def _apply_preference(
+        candidate_cols: list[str],
+        preferred: list[str],
+    ) -> list[str]:
+        """Return *candidate_cols* reordered with preferred names first.
+
+        Preserves the original relative order inside each group. Names in
+        *preferred* that are not present in *candidate_cols* are ignored.
+        """
+        if not preferred:
+            return list(candidate_cols)
+        preferred_set = set(preferred)
+        head = [c for c in candidate_cols if c in preferred_set]
+        tail = [c for c in candidate_cols if c not in preferred_set]
+        return head + tail
 
     @staticmethod
     def _compute_correlation(

@@ -3,6 +3,7 @@
 from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
 
 from .mae import MAE, MAEConfig, MAERunningConfig
+from .mape import MAPE, MAPEConfig, MAPERunningConfig
 from .mse import MSE, MSEConfig, MSERunningConfig
 from .r2_score import R2, R2ScoreConfig, R2ScoreRunningConfig
 
@@ -26,4 +27,10 @@ def register_nodes() -> None:
         node_class=R2,
         node_config_class=R2ScoreConfig,
         running_config_class=R2ScoreRunningConfig,
+    )
+    NODE_REGISTRY.register(
+        name="MAPE",
+        node_class=MAPE,
+        node_config_class=MAPEConfig,
+        running_config_class=MAPERunningConfig,
     )

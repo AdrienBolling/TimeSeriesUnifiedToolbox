@@ -9,14 +9,24 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from tsut.core.common.data.data import Data
+from tsut.core.common.data.data import ArrayLike, DataContext
 from tsut.core.common.enums import NodeExecutionMode
 from tsut.core.nodes.node import Node
 from tsut.core.pipeline.pipeline import Pipeline
 
 
 class RunnerConfig(BaseModel):
-    """Define the configuration schema for a PipelineRunner."""
+    """Define the configuration schema for a PipelineRunner.
+
+    Attributes:
+        verbose: If ``True``, the runner shows a per-phase :mod:`tqdm`
+            progress bar tracking node execution.  Disable when running
+            many short pipelines (e.g. hyperparameter tuning trials) or
+            when stdout is captured.
+
+    """
+
+    verbose: bool = True
 
 
 class PipelineRunner(ABC):
@@ -91,12 +101,12 @@ class PipelineRunner(ABC):
     # We will see where it belongs on the long run.
 
     @abstractmethod
-    def train(self, input_data: Mapping[str, Mapping[str, Data]] | None = None) -> None:
+    def train(self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None) -> None:
         """Train the pipeline end-to-end.
 
         Args:
             input_data: Optional external data keyed by
-                ``{node_name: {port_name: Data}}``.  Source nodes may use
+                ``{node_name: {port_name: Array}}``.  Source nodes may use
                 this instead of their built-in data loading.
 
         """
@@ -104,8 +114,8 @@ class PipelineRunner(ABC):
 
     @abstractmethod
     def evaluate(
-        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
-    ) -> Mapping[str, Data]:
+        self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Evaluate the pipeline and return computed metrics.
 
         Args:
@@ -120,8 +130,8 @@ class PipelineRunner(ABC):
 
     @abstractmethod
     def infer(
-        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
-    ) -> Mapping[str, Data]:
+        self, input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Run inference and return the sink node outputs.
 
         Args:

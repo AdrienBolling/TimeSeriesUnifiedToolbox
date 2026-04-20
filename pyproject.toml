@@ -25,12 +25,15 @@ dependencies = [
   "scikit-learn>=1.8.0",
   "mlflow>=3.10.1",
   "plotly>=6.6.0",
+  "tqdm>=4.66",
 ]
 
 [dependency-groups]
 dev = [
     "pandas-stubs>=3.0.0.260204",
     "pre-commit>=4.3.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.14.2",
     "ty>=0.0.1a24",
 ]

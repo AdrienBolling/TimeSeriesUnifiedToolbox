@@ -14,9 +14,10 @@ The standard Tukey fence uses ``k=1.5`` (mild outliers) or ``k=3.0``
 (extreme outliers).
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pandas as pd
+from ray import tune
 from pydantic import Field
 
 from tsut.components.utils.dataframe import filter_columns
@@ -64,7 +65,7 @@ class IQROutlierFilterRunningConfig(TransformRunningConfig):
 class IQROutlierFilterHyperParameters(TransformHyperParameters):
     """Tuneable hyperparameters for the IQROutlierFilter."""
 
-    threshold: float = Field(
+    iqr_multiplier: float = Field(
         default=1.5,
         gt=0.0,
         description=(
@@ -73,20 +74,33 @@ class IQROutlierFilterHyperParameters(TransformHyperParameters):
             "``k=3.0`` flags only extreme outliers."
         ),
     )
+    threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Proportion of features that must be flagged as outliers "
+            "for a row to be removed (``strategy='remove'`` only). "
+            "A row is dropped when ``outlier_features / total_features > threshold``. "
+            "``0.0`` (default) drops any row with at least one outlier feature; "
+            "``1.0`` drops only rows where every feature is an outlier."
+        ),
+    )
     strategy: Literal["remove", "cap"] = Field(
         default="remove",
         description=(
             "How to handle detected outliers. "
-            "``'remove'`` drops any row containing at least one outlier. "
-            "``'cap'`` clips outlier values to the fence boundary."
+            "``'remove'`` drops rows whose outlier-feature proportion exceeds ``threshold``. "
+            "``'cap'`` clips outlier values to the fence boundary (per-value, ignores ``threshold``)."
         ),
     )
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, Any]] = {
-    "threshold": ("float", {"min": 0.5, "max": 5.0}),
-    "strategy": ("choice", ["remove", "cap"]),
+hyperparameter_space: dict[str, Any] = {
+    "iqr_multiplier": tune.uniform(0.5, 5.0),
+    "threshold": tune.uniform(0.0, 1.0),
+    "strategy": tune.choice(["remove", "cap"]),
 }
 
 
@@ -100,7 +114,7 @@ class IQROutlierFilterConfig(
 
     hyperparameters: IQROutlierFilterHyperParameters = Field(
         default_factory=IQROutlierFilterHyperParameters,
-        description="Tuneable hyperparameters (threshold, strategy).",
+        description="Tuneable hyperparameters (iqr_multiplier, threshold, strategy).",
     )
     running_config: IQROutlierFilterRunningConfig = Field(
         default_factory=IQROutlierFilterRunningConfig,
@@ -185,7 +199,7 @@ class IQROutlierFilter(
     -------
     >>> cfg = IQROutlierFilterConfig(
     ...     hyperparameters=IQROutlierFilterHyperParameters(
-    ...         threshold=3.0, strategy="cap"
+    ...         iqr_multiplier=3.0, strategy="cap"
     ...     ),
     ... )
     >>> node = IQROutlierFilter(config=cfg)
@@ -238,12 +252,12 @@ class IQROutlierFilter(
             "output": (result, ctx),
         }
         is_remove = self._config.hyperparameters.strategy == "remove"
-        keep = ~outlier_mask.any(axis=1) if is_remove else None
+        keep = ~self._row_exceeds_threshold(outlier_mask) if is_remove else None
         for port in ("target", "sliced"):
             if port in data:
                 port_df, port_ctx = data[port]
                 if keep is not None:
-                    port_df = port_df.loc[keep].reset_index(drop=True)
+                    port_df = cast("pd.DataFrame", port_df.loc[keep]).reset_index(drop=True)
                 outputs[port] = (port_df, port_ctx)
         return outputs
 
@@ -266,7 +280,7 @@ class IQROutlierFilter(
         """Return a boolean DataFrame: ``True`` where a value is outside the fence."""
         cols = list(self._params["q1"].keys())
         target = df[cols]
-        k = self._config.hyperparameters.threshold
+        k = self._config.hyperparameters.iqr_multiplier
 
         lower = pd.Series(
             {c: self._params["q1"][c] - k * self._params["iqr"][c] for c in cols}
@@ -276,6 +290,18 @@ class IQROutlierFilter(
         )
         return target.lt(lower, axis=1) | target.gt(upper, axis=1)
 
+    def _row_exceeds_threshold(self, outlier_mask: pd.DataFrame) -> pd.Series:
+        """Return a boolean Series: ``True`` where a row should be removed.
+
+        A row is flagged when the proportion of outlier features strictly
+        exceeds the configured ``threshold``.
+        """
+        num_cols = outlier_mask.shape[1]
+        if num_cols == 0:
+            return pd.Series(data=False, index=outlier_mask.index)
+        proportion = outlier_mask.sum(axis=1) / num_cols
+        return proportion > self._config.hyperparameters.threshold
+
     def _apply_strategy(
         self,
         df: pd.DataFrame,
@@ -283,10 +309,12 @@ class IQROutlierFilter(
     ) -> pd.DataFrame:
         """Handle detected outliers according to the configured strategy."""
         if self._config.hyperparameters.strategy == "remove":
-            return df.loc[~outlier_mask.any(axis=1)].reset_index(drop=True)
+            mask = self._row_exceeds_threshold(outlier_mask)
+            filtered = cast("pd.DataFrame", df.loc[~mask])
+            return filtered.reset_index(drop=True)
 
         # strategy == "cap"
-        k = self._config.hyperparameters.threshold
+        k = self._config.hyperparameters.iqr_multiplier
         result = df.copy()
         for col in outlier_mask.columns:
             lower = self._params["q1"][col] - k * self._params["iqr"][col]

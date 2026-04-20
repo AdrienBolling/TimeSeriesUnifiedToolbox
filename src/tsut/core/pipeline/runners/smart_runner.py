@@ -1,11 +1,12 @@
 """SmartRunner implementation module."""
 
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import networkx as nx
 from jaxtyping import AbstractDtype
+from tqdm.auto import tqdm
 
 from tsut.core.common.data.data import (
     DATA_CATEGORY_MAPPING,
@@ -67,18 +68,23 @@ class SmartRunner(
             pipeline_name=pipeline.name,
             pipeline_version=pipeline.version,
         )
-        self._input_data: Mapping[str, Mapping[str, Data]] | None = (
-            None  # To store the input data passed to the runner, which can be used by the nodes during execution if needed.
-        )
+        self._input_data: (
+            Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None
+        ) = None  # To store the input data passed to the runner, which can be used by the nodes during execution if needed.
+        self._pbar: tqdm | None = None  # Per-phase progress bar, if verbose.
 
     # --- PipelineRunner API implementation ---
 
-    def train(self, input_data: Mapping[str, Mapping[str, Data]] | None = None) -> None:
+    def train(
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
+    ) -> None:
         """Train the pipeline by executing the graph up to the sink node.
 
         Args:
             input_data: Optional external data keyed by
-                ``{node_name: {port_name: Data}}``.
+                ``{node_name: {port_name: (array, context)}}``.
 
         """
         self._reset_caches()
@@ -88,25 +94,32 @@ class SmartRunner(
         t0 = time.perf_counter()
         try:
             last_node = self.pipeline.get_validated_sink_node_name()
+            self._start_progress([last_node], desc="Training")
             self._call_node(last_node)
         except Exception as exc:
             self._log.exception("Training failed", exc)
             raise
+        finally:
+            self._close_progress()
         self._log.log_phase(
             "training", "end", duration_ms=(time.perf_counter() - t0) * 1000
         )
 
     def evaluate(
-        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
-    ) -> dict[str, Any]:
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Evaluate the pipeline by executing all metric nodes.
 
         Args:
             input_data: Optional external data keyed by
-                ``{node_name: {port_name: Data}}``.
+                ``{node_name: {port_name: (array, context)}}``.
 
         Returns:
-            Dict mapping metric node names to their computed outputs.
+            Flat mapping of metric outputs to ``(array, context)`` tuples.
+            Single-port metric nodes are keyed by the node name; multi-port
+            metric nodes are keyed by ``f"{node_name}.{port_name}"``.
 
         """
         self._reset_caches()
@@ -116,27 +129,32 @@ class SmartRunner(
         t0 = time.perf_counter()
         try:
             metric_node_names = self.get_metric_node_names()
+            self._start_progress(metric_node_names, desc="Evaluation")
             for metric_node_name in metric_node_names:
                 self._call_node(metric_node_name)
         except Exception as exc:
             self._log.exception("Evaluation failed", exc)
             raise
+        finally:
+            self._close_progress()
         self._log.log_phase(
             "evaluation", "end", duration_ms=(time.perf_counter() - t0) * 1000
         )
-        return self._metric_node_outputs
+        return self._flatten_metric_outputs()
 
     def infer(
-        self, input_data: Mapping[str, Mapping[str, Data]] | None = None
-    ) -> dict[str, Data]:
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]]
+        | None = None,
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
         """Run inference and return the sink node outputs.
 
         Args:
             input_data: Optional external data keyed by
-                ``{node_name: {port_name: Data}}``.
+                ``{node_name: {port_name: (array, context)}}``.
 
         Returns:
-            Dict mapping output port names to their :class:`Data` values.
+            Mapping of sink output port names to ``(array, context)`` tuples.
 
         """
         self._reset_caches()
@@ -146,20 +164,121 @@ class SmartRunner(
         t0 = time.perf_counter()
         try:
             last_node = self.pipeline.get_validated_sink_node_name()
+            self._start_progress([last_node], desc="Inference")
             result = self._call_node(last_node)
         except Exception as exc:
             self._log.exception("Inference failed", exc)
             raise
+        finally:
+            self._close_progress()
         self._log.log_phase(
             "inference", "end", duration_ms=(time.perf_counter() - t0) * 1000
         )
-        return result
+        return {
+            port_name: self._convert_data_to_tuple(data)
+            for port_name, data in result.items()
+        }
 
     def _reset_caches(self) -> None:
         """Clear memoized outputs so each phase recomputes from scratch."""
         self._node_outputs = {}
         self._metric_node_outputs = {}
         self._input_data = None
+
+    # --- Progress bar helpers ---
+
+    def _start_progress(self, leaves: Iterable[str], *, desc: str) -> None:
+        """Open a tqdm progress bar sized to the nodes that will execute.
+
+        Mirrors :meth:`_call_node`'s mode-aware walk: a predecessor is
+        only counted when the incoming edge feeds at least one input
+        port active in the current execution mode.  This keeps the bar
+        total equal to the number of nodes the runner will actually
+        invoke (e.g. target-side nodes drop out during inference).
+
+        Args:
+            leaves: Entry-point nodes for the current phase (the sink
+                for train/infer, every metric node for evaluate).
+            desc: Human-readable label shown on the left of the bar.
+
+        """
+        if not self._config.verbose:
+            return
+        covered = self._collect_execution_set(leaves)
+        self._pbar = tqdm(
+            total=len(covered),
+            desc=desc,
+            unit="nodes",
+            bar_format=(
+                "{l_bar}{bar}| {n_fmt}/{total_fmt} {unit} "
+                "[{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+            ),
+        )
+
+    def _collect_execution_set(self, leaves: Iterable[str]) -> set[str]:
+        """Walk the graph the same way :meth:`_call_node` will execute it.
+
+        A predecessor is only followed when the connecting edge maps to
+        at least one input port active in the current execution mode.
+        Nodes whose output only feeds inactive ports are therefore
+        pruned from the set.
+
+        Args:
+            leaves: Entry-point nodes for the current phase.
+
+        Returns:
+            Set of node names that will execute in the current mode.
+
+        """
+        visited: set[str] = set()
+
+        def walk(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            for edge in self._active_incoming_edges(name):
+                walk(edge.source)
+
+        for leaf in leaves:
+            walk(leaf)
+        return visited
+
+    def _port_active_in_mode(self, port: Port) -> bool:
+        """Return whether ``port`` is active in the current execution mode."""
+        return self._mode in port.mode or NodeExecutionMode.ALL in port.mode
+
+    def _active_incoming_edges(self, node_name: str) -> list[Edge]:
+        """Edges feeding ``node_name`` that carry at least one port active now.
+
+        Filters out edges whose every ``(source_port, target_port)`` pair
+        lands on an input port inactive in the current execution mode —
+        those are irrelevant to the work about to happen and should not
+        drag their producers into the run.
+        """
+        node = self.node_objects[node_name]
+        active: list[Edge] = []
+        for pred in self.pipeline.graph.predecessors(node_name):
+            edge = self.pipeline.get_edge(pred, node_name)
+            if any(
+                self._port_active_in_mode(node.in_ports[tgt])
+                for _src, tgt in edge.ports_map
+            ):
+                active.append(edge)
+        return active
+
+    def _advance_progress(self, node_name: str) -> None:
+        """Advance the active progress bar by one, postfixed with *node_name*."""
+        if self._pbar is None:
+            return
+        self._pbar.set_postfix_str(node_name, refresh=False)
+        self._pbar.update(1)
+
+    def _close_progress(self) -> None:
+        """Close and discard the active progress bar, if any."""
+        if self._pbar is None:
+            return
+        self._pbar.close()
+        self._pbar = None
 
     # --- Internal methods for node execution ---
 
@@ -210,6 +329,38 @@ class SmartRunner(
         self._log.error(msg)
         raise ValueError(msg)
 
+    def _convert_data_to_tuple(self, data: Data) -> tuple[ArrayLike, DataContext]:
+        """Convert an internal :class:`Data` into the public ``(array, context)`` tuple.
+
+        Used when returning values across the runner's public surface
+        (``evaluate`` / ``infer``) to match the abstract
+        :class:`PipelineRunner` contract.
+        """
+        if isinstance(data, TabularData):
+            return data.to_pandas()
+        msg = f"Unsupported data type: {type(data)}. Currently only TabularData is supported as output data type for the SmartRunner."
+        self._log.error(msg)
+        raise ValueError(msg)
+
+    def _flatten_metric_outputs(
+        self,
+    ) -> dict[str, tuple[ArrayLike, DataContext]]:
+        """Flatten the nested ``_metric_node_outputs`` into the public return shape.
+
+        Single-port metric nodes are keyed by the node name; multi-port
+        metric nodes are keyed by ``f"{node_name}.{port_name}"`` to avoid
+        collisions.
+        """
+        flat: dict[str, tuple[ArrayLike, DataContext]] = {}
+        for node_name, ports in self._metric_node_outputs.items():
+            if len(ports) == 1:
+                data = next(iter(ports.values()))
+                flat[node_name] = self._convert_data_to_tuple(data)
+            else:
+                for port_name, data in ports.items():
+                    flat[f"{node_name}.{port_name}"] = self._convert_data_to_tuple(data)
+        return flat
+
     def _get_execution_order(self) -> list[str]:
         """Compute the execution order using topological sort."""
         return list(nx.topological_sort(self.pipeline.graph))
@@ -229,15 +380,13 @@ class SmartRunner(
 
         """
         self._log.log_node_call(node_name, self._mode)
-        # Get the predecessors of the node to gather inputs
-        predecessors = list(self.pipeline.graph.predecessors(node_name))
-        edges = [
-            self.pipeline.get_edge(predecessor, node_name)
-            for predecessor in predecessors
-        ]
-        for pred in predecessors:
-            if pred not in self._node_outputs:
-                self._node_outputs[pred] = self._call_node(pred)
+        # Only recurse through predecessors whose edge feeds a port that
+        # is active in the current mode — skipping lets modes prune whole
+        # subgraphs (e.g. target loaders during inference).
+        edges = self._active_incoming_edges(node_name)
+        for edge in edges:
+            if edge.source not in self._node_outputs:
+                self._node_outputs[edge.source] = self._call_node(edge.source)
 
         t0 = time.perf_counter()
         value = self._execute_node(node_name, edges)
@@ -247,6 +396,7 @@ class SmartRunner(
         self._log.log_node_execution(
             node_name, self._mode, duration_ms=duration_ms, node_type=node_type
         )
+        self._advance_progress(node_name)
         if (
             node_type == NodeType.METRIC
         ):  # We don't memoize the output of the Sink node as it is supposed to be the last node in the pipeline and its output is not used by any other node.
@@ -267,6 +417,8 @@ class SmartRunner(
 
         """
         node = self.node_objects[node_name]
+        # Set execution mode on the node so it can adjust its behaviour if needed (e.g. skip certain inputs that are only required for training, etc)
+        node.set_execution_mode(self._mode)
         # Gather the inputs for the node by converting the outputs of the predecessor nodes to the expected
         # input types of the node using the edge information.
         inputs = {}
@@ -274,6 +426,11 @@ class SmartRunner(
             pred_node = self.node_objects[edge.source]
             pred_output = self._node_outputs[edge.source]
             for source_key, target_key in edge.ports_map:
+                # An edge may carry several port mappings; skip the ones
+                # whose target port is inactive in the current mode so we
+                # don't feed data into ports the node will ignore.
+                if not self._port_active_in_mode(node.in_ports[target_key]):
+                    continue
                 checked = self._runtime_typecheck_edge(
                     node,
                     pred_node,
@@ -341,7 +498,13 @@ class SmartRunner(
             msg = f"Data type mismatch between source node '{pred_node_name}' and target node '{node_name}' on edge with source port '{source_key}' and target port '{target_key}'."
             msg += f"\nExpected type: {target_jaxtyping_type}, but got type: {type(data)}. (Expected source jaxtyping type: {self._get_jaxtyping_type_from_port(source_port)})."
             msg += f"\nData: shape - {data.shape}, dtype - {data.dtype}"
-            self._log.error(msg, node_name=node_name, source_node=pred_node_name, source_port=source_key, target_port=target_key)
+            self._log.error(
+                msg,
+                node_name=node_name,
+                source_node=pred_node_name,
+                source_port=source_key,
+                target_port=target_key,
+            )
             raise TypeError(msg)
 
         return runtime_type_check(source_output[source_key])
@@ -379,9 +542,13 @@ class SmartRunner(
             and self._input_data is not None
         ):
             # For source nodes, we pass the input data from the runner to the node, as source nodes are supposed to be the entry point of data into the pipeline and they might need access to the raw input data.
+            # The external input is a tuple[ArrayLike, DataContext]; route it
+            # through the common Data representation so downstream per-node
+            # arr_type conversion stays centralised.
             inputs = {
                 key: self._convert_to_node_input(
-                    self._input_data[node_name][key], ArrayLikeEnum.PANDAS
+                    self._convert_from_node_output(self._input_data[node_name][key]),
+                    ArrayLikeEnum.PANDAS,
                 )
                 for key in self._input_data[node_name].keys()
             }
@@ -438,3 +605,8 @@ class SmartRunner(
             message = f"Node '{node_name}' ({node}) is missing required input: '{missing_input}'"
             self._log.error(message, node_name=node_name, missing_input=missing_input)
             raise ValueError(message)
+
+    def _reset_execution_modes(self) -> None:
+        """Reset execution modes on all nodes to DEFAULT."""
+        for node in self.node_objects.values():
+            node.set_execution_mode(NodeExecutionMode.DEFAULT)

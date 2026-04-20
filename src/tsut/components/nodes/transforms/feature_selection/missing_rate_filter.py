@@ -13,9 +13,10 @@ array after coercing to float where possible, with a fallback to pandas
 """
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
+from ray import tune
 import pandas as pd
 from pydantic import Field
 
@@ -79,8 +80,8 @@ class MissingRateFilterHyperParameters(TransformHyperParameters):
 
 
 # Exposed at module level so external tuners can discover the search space.
-hyperparameter_space: dict[str, tuple[str, Any]] = {
-    "threshold": ("float", {"min": 0.0, "max": 1.0}),
+hyperparameter_space: dict[str, Any] = {
+    "threshold": tune.uniform(0.0, 1.0),
 }
 
 
@@ -213,7 +214,7 @@ class MissingRateFilter(
 
         out_ctx = deepcopy(ctx)
         out_ctx.remove_columns(dropped)
-        return {"output": (df[keep], out_ctx)}
+        return {"output": (cast("pd.DataFrame", df[keep]), out_ctx)}
 
     def get_params(self) -> _MissingRateParams:
         """Return the list of columns that survived filtering."""

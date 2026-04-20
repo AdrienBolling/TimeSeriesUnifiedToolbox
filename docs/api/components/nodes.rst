@@ -12,7 +12,27 @@ Data Sources
 Models
 ------
 
+.. automodule:: tsut.components.nodes.models.linear_regression
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. automodule:: tsut.components.nodes.models.random_forest_regressor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.models.random_forest_classifier
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.models.gradient_boosting_regressor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.models.gradient_boosting_classifier
    :members:
    :undoc-members:
    :show-inheritance:
@@ -24,6 +44,11 @@ Encodings
 ~~~~~~~~~
 
 .. automodule:: tsut.components.nodes.transforms.encodings.one_hot_encoding
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.transforms.encodings.label_encoding
    :members:
    :undoc-members:
    :show-inheritance:
@@ -98,6 +123,16 @@ Scalers
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: tsut.components.nodes.transforms.scalers.min_max_scaler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.transforms.scalers.robust_scaler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Metrics
 -------
 
@@ -119,6 +154,16 @@ Classification
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: tsut.components.nodes.metrics.classification.precision
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.metrics.classification.recall
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Regression
 ~~~~~~~~~~
 
@@ -133,6 +178,11 @@ Regression
    :show-inheritance:
 
 .. automodule:: tsut.components.nodes.metrics.regression.r2_score
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: tsut.components.nodes.metrics.regression.mape
    :members:
    :undoc-members:
    :show-inheritance:

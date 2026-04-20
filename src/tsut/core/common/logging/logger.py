@@ -46,10 +46,15 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import time
 import traceback
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # ---------------------------------------------------------------------------
 # Package-level NullHandler -- keeps the library silent until the user
@@ -289,6 +294,105 @@ class Logger:
         }
         extra.update(kwargs)
         self.debug(f"Node called: {node_name}", **extra)
+
+    def log_trial(  # noqa: PLR0913
+        self,
+        trial_id: str | int,
+        status: Literal["start", "end", "error"],
+        *,
+        trial_config: dict[str, Any] | None = None,
+        metric_name: str | None = None,
+        metric_value: float | None = None,
+        duration_ms: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Log a hyperparameter-tuning trial transition.
+
+        Args:
+            trial_id: Identifier of the trial (index, Ray trial id, ...).
+            status: ``"start"``, ``"end"``, or ``"error"``.
+            trial_config: Sampled hyperparameters for this trial.
+            metric_name: Name of the reported metric (only on ``"end"``).
+            metric_value: Scalar value of the reported metric.
+            duration_ms: Wall-clock trial duration.
+            **kwargs: Additional context merged into the log record.
+
+        """
+        extra: dict[str, Any] = {
+            "trial_id": trial_id,
+            "trial_status": status,
+        }
+        if trial_config is not None:
+            extra["trial_config"] = trial_config
+        if metric_name is not None:
+            extra["metric_name"] = metric_name
+        if metric_value is not None:
+            extra["metric_value"] = metric_value
+        if duration_ms is not None:
+            extra["duration_ms"] = duration_ms
+        extra.update(kwargs)
+        level_fn = self.error if status == "error" else self.info
+        level_fn(f"Trial {trial_id} {status}", **extra)
+
+    # ------------------------------------------------------------------
+    # Timing helper
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def timed(
+        self,
+        event: str,
+        *,
+        level: int = logging.INFO,
+        **context: Any,
+    ) -> Iterator[Logger]:
+        """Context manager that emits ``{event} start`` / ``end`` / ``error`` logs.
+
+        On enter, logs ``{event} start`` at *level*.  On normal exit, logs
+        ``{event} end`` at *level* with ``duration_ms`` attached.  On
+        exception, logs ``{event} error`` at ``ERROR`` with the traceback
+        and ``duration_ms``, then re-raises.
+
+        The context manager yields a child :class:`Logger` with *context*
+        bound, so callers can attach additional fields inside the block
+        without duplicating kwargs on every line.
+
+        Args:
+            event: Human-readable name of the scope (e.g. ``"Tuning"``).
+            level: Level for the ``start`` / ``end`` records.  Defaults to
+                ``INFO``.
+            **context: Fields bound to both the start/end log records and
+                the yielded child logger.
+
+        Yields:
+            A child logger with *context* bound.
+
+        Example:
+            >>> with log.timed("Tuning", num_samples=8) as scoped:
+            ...     scoped.debug("Sampled config", config=cfg)
+            ...     run_tuning()
+
+        """
+        scoped = self.bind(**context) if context else self
+        t0 = time.perf_counter()
+        scoped._log(level, f"{event} start", {"phase_status": "start"})
+        try:
+            yield scoped
+        except BaseException as exc:
+            duration_ms = (time.perf_counter() - t0) * 1000.0
+            scoped.exception(
+                f"{event} error",
+                exc,
+                phase_status="error",
+                duration_ms=duration_ms,
+            )
+            raise
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        scoped._log(
+            level,
+            f"{event} end",
+            {"phase_status": "end", "duration_ms": duration_ms},
+        )
 
     # ------------------------------------------------------------------
     # Internals

@@ -1,14 +1,15 @@
 """Base wrapper class for PipelineRunners."""
 
-from abc import ABC, abstractmethod
-
-from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner
-from pydantic import BaseModel
-from tsut.core.nodes.node import Node
-
+from abc import ABC
+from collections.abc import Mapping
 from typing import Any
 
-class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
+from tsut.core.common.data.data import ArrayLike, DataContext
+from tsut.core.nodes.node import Node
+from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner
+
+
+class PipelineRunnerWrapper[D_O, M, C](PipelineRunner, ABC):
     """Abstract wrapper that adds functionality around a :class:`PipelineRunner`.
 
     Subclasses can layer cross-cutting concerns (tuning, logging, caching,
@@ -22,7 +23,7 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
 
     def __init__(
         self,
-        pipeline_runner: PipelineRunner[D_O, M],
+        pipeline_runner: PipelineRunner,
         *,
         config: C,
     ) -> None:
@@ -39,14 +40,23 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
     # --- Convenience API
 
     @property
-    def pipeline_runner(self) -> PipelineRunner[D_O, M]:
+    def pipeline_runner(self) -> PipelineRunner:
         """Get the pipeline runner associated with this wrapper."""
         return self._pipeline_runner
 
     @property
+    def pipeline(self) -> Any:
+        """Get the pipeline object from the underlying runner."""
+        return self._pipeline_runner.pipeline
+
+    @property
     def unwrapped(self) -> PipelineRunner:
         """Get the original, unwrapped pipeline runner."""
-        return self._pipeline_runner.unwrapped if hasattr(self._pipeline_runner, 'unwrapped') else self._pipeline_runner
+        return (
+            self._pipeline_runner.unwrapped
+            if hasattr(self._pipeline_runner, "unwrapped")
+            else self._pipeline_runner
+        )
 
     @property
     def config(self) -> C:
@@ -63,24 +73,55 @@ class PipelineRunnerWrapper[D_O, M, C](PipelineRunner[D_O, M], ABC):
         """Get the mapping of node names to their instantiated objects in the underlying pipeline."""
         return self._pipeline_runner.node_objects
 
-    def get_params(self) -> dict[str, dict[str, any]]:
+    def get_params(self) -> dict[str, dict[str, Any]]:
         """Get the parameters of all nodes in the underlying pipeline."""
         return self._pipeline_runner.get_params()
 
-    def set_params(self, params: dict[str, dict[str, any]]) -> None:
+    def set_params(self, params: dict[str, dict[str, Any]]) -> None:
         """Set the parameters of all nodes in the underlying pipeline."""
         self._pipeline_runner.set_params(params=params)
 
     # --- API to implement for any PipelineRunnerWrapper implementation ---
 
-    def train(self) -> None:
-        """Train the underlying pipeline runner. This method should be implemented by any PipelineRunnerWrapper implementation."""
-        return self._pipeline_runner.train()
+    def train(
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+    ) -> None:
+        """Train the underlying pipeline runner.
 
-    def infer(self) -> D_O:
-        """Infer with the underlying pipeline runner. This method should be implemented by any PipelineRunnerWrapper implementation."""
-        return self._pipeline_runner.infer()
+        Args:
+            input_data: Optional external data forwarded to the wrapped
+                runner, keyed by ``{node_name: {port_name: (array, context)}}``.
 
-    def evaluate(self) -> M:
-        """Evaluate with the underlying pipeline runner. This method should be implemented by any PipelineRunnerWrapper implementation."""
-        return self._pipeline_runner.evaluate()
+        """
+        return self._pipeline_runner.train(input_data=input_data)
+
+    def infer(
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
+        """Infer with the underlying pipeline runner.
+
+        Args:
+            input_data: Optional external data forwarded to the wrapped runner.
+
+        Returns:
+            Sink-node outputs as ``(array, context)`` tuples.
+
+        """
+        return self._pipeline_runner.infer(input_data=input_data)
+
+    def evaluate(
+        self,
+        input_data: Mapping[str, Mapping[str, tuple[ArrayLike, DataContext]]] | None = None,
+    ) -> Mapping[str, tuple[ArrayLike, DataContext]]:
+        """Evaluate with the underlying pipeline runner.
+
+        Args:
+            input_data: Optional external data forwarded to the wrapped runner.
+
+        Returns:
+            Metric outputs as ``(array, context)`` tuples.
+
+        """
+        return self._pipeline_runner.evaluate(input_data=input_data)
