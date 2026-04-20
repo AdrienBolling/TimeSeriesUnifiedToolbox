@@ -267,21 +267,17 @@ class MLFlowLoggerWrapper:
 
     def _log_pipeline_graph_artifact(self) -> None:
         """Render the pipeline DAG as an interactive HTML artifact."""
-        pipeline = self._runner.pipeline
-        html = pipeline.render_to_html(full_html=True)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "pipeline_graph.html"
-            path.write_text(html)
-            mlflow.log_artifact(str(path))
+            self._runner.pipeline.save_html_to_dir(tmpdir)
+            for path in Path(tmpdir).iterdir():
+                mlflow.log_artifact(str(path))
 
     def _log_pipeline_config_artifact(self) -> None:
         """Dump the full PipelineConfig as a JSON artifact."""
-        pipeline = self._runner.pipeline
-        config_json = pipeline.config.model_dump_json(indent=2)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "pipeline_config.json"
-            path.write_text(config_json)
-            mlflow.log_artifact(str(path))
+            self._runner.pipeline.save_config_to_dir(tmpdir)
+            for path in Path(tmpdir).iterdir():
+                mlflow.log_artifact(str(path))
 
     def _log_metrics(self, metrics: dict[str, Any]) -> None:
         """Convert runner metrics to scalars and log them to MLflow.

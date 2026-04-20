@@ -6,6 +6,7 @@ TSUT Pipelines are akin to graphs. The nodes are the components of the pipeline 
 import hashlib
 import json
 import pickle
+import re
 from collections.abc import Callable, Mapping
 from functools import wraps
 from pathlib import Path
@@ -137,6 +138,16 @@ class _InternalPipelineConfig(BaseModel):
     settings: PipelineSettings = PipelineSettings()
 
 
+def _sanitize_name(name: str) -> str:
+    """Convert a pipeline name to a file-safe string.
+
+    Spaces and runs of non-alphanumeric characters (except ``-`` and
+    ``_``) are replaced by a single underscore, then leading/trailing
+    underscores are stripped.
+    """
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_")
+
+
 class Pipeline:
     """Base class for a TSUT Pipeline.
 
@@ -240,6 +251,17 @@ class Pipeline:
     def settings(self) -> PipelineSettings:
         """Get the settings of the pipeline."""
         return self._config.settings
+
+    @property
+    def file_basename(self) -> str:
+        """File-safe base name: ``{sanitized_name}_v{version}``.
+
+        Used by :meth:`save_params_to_dir`, :meth:`save_config_to_dir`,
+        and :meth:`save_html_to_dir` so every artefact shares the same
+        prefix.
+
+        """
+        return f"{_sanitize_name(self.name)}_v{self.version}"
 
     @property
     def compiled(self) -> bool:
@@ -582,7 +604,7 @@ class Pipeline:
 
         """
         params = self.get_params()
-        file_name = f"{dir_path}/{self.name}_v{self.version}_params.pkl"
+        file_name = f"{dir_path}/{self.file_basename}_params.pkl"
         with Path(file_name).open("wb") as f:
             pickle.dump(params, f)
 
@@ -593,10 +615,33 @@ class Pipeline:
             dir_path: Directory containing the parameter pickle file.
 
         """
-        file_name = f"{dir_path}/{self.name}_v{self.version}_params.pkl"
+        file_name = f"{dir_path}/{self.file_basename}_params.pkl"
         with Path(file_name).open("rb") as f:
             params = pickle.load(f)
         self.set_params(params)
+
+    def save_config_to_dir(self, dir_path: str) -> None:
+        """Save the pipeline configuration as a JSON file.
+
+        Args:
+            dir_path: Directory in which the JSON file will be written.
+
+        """
+        file_name = f"{dir_path}/{self.file_basename}_config.json"
+        Path(file_name).write_text(self.config.model_dump_json(indent=2))
+
+    def save_html_to_dir(self, dir_path: str, **render_kwargs: Any) -> None:
+        """Render the pipeline graph and save it as an HTML file.
+
+        Args:
+            dir_path: Directory in which the HTML file will be written.
+            **render_kwargs: Forwarded to :meth:`render_to_html`
+                (``title``, ``backend``, ``figsize``, ``full_html``).
+
+        """
+        html = self.render_to_html(**render_kwargs)
+        file_name = f"{dir_path}/{self.file_basename}_graph.html"
+        Path(file_name).write_text(html)
 
     ## --- Public API for identity ---
     def hash(self) -> str:
