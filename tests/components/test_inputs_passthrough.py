@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from tsut.components.nodes.data_sources.inputs_passthrough import (
+from nodeml.components.nodes.data_sources.inputs_passthrough import (
     InputsPassthrough,
     InputsPassthroughConfig,
 )
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
 )
-from tsut.core.common.enums import NodeExecutionMode
-from tsut.core.nodes.node import Port
+from nodeml.core.common.enums import NodeExecutionMode
+from nodeml.core.nodes.node import Port
 
 
 def _x_port() -> Port:

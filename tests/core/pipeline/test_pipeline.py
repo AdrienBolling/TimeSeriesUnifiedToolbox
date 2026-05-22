@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.pipeline.pipeline.Pipeline`.
+"""Tests for :class:`nodeml.core.pipeline.pipeline.Pipeline`.
 
 We exercise:
 
@@ -13,17 +13,17 @@ from __future__ import annotations
 
 import pytest
 
-from tsut.components.nodes.data_sources.inputs_passthrough import (
+from nodeml.components.nodes.data_sources.inputs_passthrough import (
     InputsPassthroughConfig,
 )
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
 )
-from tsut.core.nodes.data_sink.sink import SinkConfig
-from tsut.core.nodes.node import Port
-from tsut.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
+from nodeml.core.nodes.data_sink.sink import SinkConfig
+from nodeml.core.nodes.node import Port
+from nodeml.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
 
 
 def _source_cfg() -> InputsPassthroughConfig:
@@ -96,7 +96,7 @@ class TestEdgeValidation:
             )
 
     def test_sink_cannot_be_edge_source(self) -> None:
-        from tsut.components.nodes.transforms.scalers.standard_scaler import (
+        from nodeml.components.nodes.transforms.scalers.standard_scaler import (
             StandardScalerConfig,
         )
 

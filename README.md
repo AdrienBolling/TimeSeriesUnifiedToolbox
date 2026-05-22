@@ -1,4 +1,4 @@
-# TSUT — Time Series Unified Toolbox
+# NodeML
 
 A Python framework for building, training, and deploying **ML pipelines as directed acyclic graphs (DAGs)**. Each node in the graph — data source, transform, model, or metric — communicates through typed ports, and the runner handles execution order, mode-aware pruning, and progress tracking automatically.
 
@@ -21,9 +21,9 @@ A Python framework for building, training, and deploying **ML pipelines as direc
 ## Quick start
 
 ```python
-from tsut import NODE_REGISTRY
-from tsut.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
-from tsut.core.pipeline.runners.smart_runner import SmartRunner
+from nodeml import NODE_REGISTRY
+from nodeml.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
+from nodeml.core.pipeline.runners.smart_runner import SmartRunner
 
 # Configure nodes
 source_cfg = NODE_REGISTRY.get_node_config_class("InputsPassthrough")(...)

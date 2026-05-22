@@ -13,31 +13,31 @@ import numpy as np
 import pandas as pd
 from pydantic import Field
 
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
     NumericalData,
     TabularDataContext,
 )
-from tsut.core.nodes.data_source.data_source import (
+from nodeml.core.nodes.data_source.data_source import (
     DataSourceConfig,
     DataSourceNode,
     DataSourceRunningConfig,
 )
-from tsut.core.nodes.metrics.metric_node import (
+from nodeml.core.nodes.metrics.metric_node import (
     MetricNode,
     MetricNodeConfig,
     MetricNodeRunningConfig,
 )
-from tsut.core.nodes.models.model import (
+from nodeml.core.nodes.models.model import (
     Model,
     ModelConfig,
     ModelHyperParameters,
     ModelRunningConfig,
 )
-from tsut.core.nodes.node import Port
-from tsut.core.nodes.transform.transform import (
+from nodeml.core.nodes.node import Port
+from nodeml.core.nodes.transform.transform import (
     TransformConfig,
     TransformHyperParameters,
     TransformNode,

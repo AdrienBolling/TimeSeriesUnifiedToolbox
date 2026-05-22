@@ -1,9 +1,9 @@
-"""Tests for :class:`tsut.core.nodes.data_sink.sink.Sink`."""
+"""Tests for :class:`nodeml.core.nodes.data_sink.sink.Sink`."""
 
 from __future__ import annotations
 
-from tsut.core.nodes.data_sink.sink import Sink, SinkConfig
-from tsut.core.nodes.node import NodeType
+from nodeml.core.nodes.data_sink.sink import Sink, SinkConfig
+from nodeml.core.nodes.node import NodeType
 
 from tests.shims.tabular import numerical_pair
 

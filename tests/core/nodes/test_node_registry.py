@@ -1,15 +1,15 @@
-"""Tests for :class:`tsut.core.nodes.registry.node_registry.NodeRegistry`.
+"""Tests for :class:`nodeml.core.nodes.registry.node_registry.NodeRegistry`.
 
 These tests operate on a fresh :class:`NodeRegistry` instance so that they
 cannot interact with the module-level :data:`NODE_REGISTRY` populated by
-``tsut`` auto-discovery.
+``nodeml`` auto-discovery.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tsut.core.nodes.registry.node_registry import NodeRegistry
+from nodeml.core.nodes.registry.node_registry import NodeRegistry
 
 from tests.shims.nodes import (
     IdentityTransform,
@@ -60,10 +60,10 @@ class TestNodeRegistration:
 
 
 class TestGlobalRegistryHasExpectedComponents:
-    """Sanity-check auto-discovery via ``tsut`` import (fixture-triggered)."""
+    """Sanity-check auto-discovery via ``nodeml`` import (fixture-triggered)."""
 
     def test_core_components_are_registered(self) -> None:
-        from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
+        from nodeml.core.nodes.registry.node_registry import NODE_REGISTRY
 
         # A minimal baseline of components that should always be present.
         expected = {

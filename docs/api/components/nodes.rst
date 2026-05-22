@@ -4,7 +4,7 @@ Component Nodes
 Data Sources
 ------------
 
-.. automodule:: tsut.components.nodes.data_sources.tabular_csv_fetcher
+.. automodule:: nodeml.components.nodes.data_sources.tabular_csv_fetcher
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,27 +12,27 @@ Data Sources
 Models
 ------
 
-.. automodule:: tsut.components.nodes.models.linear_regression
+.. automodule:: nodeml.components.nodes.models.linear_regression
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.models.random_forest_regressor
+.. automodule:: nodeml.components.nodes.models.random_forest_regressor
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.models.random_forest_classifier
+.. automodule:: nodeml.components.nodes.models.random_forest_classifier
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.models.gradient_boosting_regressor
+.. automodule:: nodeml.components.nodes.models.gradient_boosting_regressor
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.models.gradient_boosting_classifier
+.. automodule:: nodeml.components.nodes.models.gradient_boosting_classifier
    :members:
    :undoc-members:
    :show-inheritance:
@@ -43,12 +43,12 @@ Transforms
 Encodings
 ~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.encodings.one_hot_encoding
+.. automodule:: nodeml.components.nodes.transforms.encodings.one_hot_encoding
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.encodings.label_encoding
+.. automodule:: nodeml.components.nodes.transforms.encodings.label_encoding
    :members:
    :undoc-members:
    :show-inheritance:
@@ -56,22 +56,22 @@ Encodings
 Feature Selection
 ~~~~~~~~~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.feature_selection.correlation_filter
+.. automodule:: nodeml.components.nodes.transforms.feature_selection.correlation_filter
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.feature_selection.data_category_filter
+.. automodule:: nodeml.components.nodes.transforms.feature_selection.data_category_filter
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.feature_selection.missing_rate_filter
+.. automodule:: nodeml.components.nodes.transforms.feature_selection.missing_rate_filter
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.feature_selection.variance_filter
+.. automodule:: nodeml.components.nodes.transforms.feature_selection.variance_filter
    :members:
    :undoc-members:
    :show-inheritance:
@@ -79,12 +79,12 @@ Feature Selection
 Filters
 ~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.filters.iqr_outlier_filter
+.. automodule:: nodeml.components.nodes.transforms.filters.iqr_outlier_filter
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.filters.zscore_outlier_filter
+.. automodule:: nodeml.components.nodes.transforms.filters.zscore_outlier_filter
    :members:
    :undoc-members:
    :show-inheritance:
@@ -92,12 +92,12 @@ Filters
 Imputations
 ~~~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.imputations.categorical_imputation
+.. automodule:: nodeml.components.nodes.transforms.imputations.categorical_imputation
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.imputations.numerical_imputation
+.. automodule:: nodeml.components.nodes.transforms.imputations.numerical_imputation
    :members:
    :undoc-members:
    :show-inheritance:
@@ -105,12 +105,12 @@ Imputations
 Operations
 ~~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.operations.feature_concatenate
+.. automodule:: nodeml.components.nodes.transforms.operations.feature_concatenate
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.operations.row_concatenate
+.. automodule:: nodeml.components.nodes.transforms.operations.row_concatenate
    :members:
    :undoc-members:
    :show-inheritance:
@@ -118,17 +118,17 @@ Operations
 Scalers
 ~~~~~~~
 
-.. automodule:: tsut.components.nodes.transforms.scalers.standard_scaler
+.. automodule:: nodeml.components.nodes.transforms.scalers.standard_scaler
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.scalers.min_max_scaler
+.. automodule:: nodeml.components.nodes.transforms.scalers.min_max_scaler
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.transforms.scalers.robust_scaler
+.. automodule:: nodeml.components.nodes.transforms.scalers.robust_scaler
    :members:
    :undoc-members:
    :show-inheritance:
@@ -139,27 +139,27 @@ Metrics
 Classification
 ~~~~~~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.metrics.classification.accuracy
+.. automodule:: nodeml.components.nodes.metrics.classification.accuracy
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.classification.auroc
+.. automodule:: nodeml.components.nodes.metrics.classification.auroc
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.classification.f1_score
+.. automodule:: nodeml.components.nodes.metrics.classification.f1_score
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.classification.precision
+.. automodule:: nodeml.components.nodes.metrics.classification.precision
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.classification.recall
+.. automodule:: nodeml.components.nodes.metrics.classification.recall
    :members:
    :undoc-members:
    :show-inheritance:
@@ -167,22 +167,22 @@ Classification
 Regression
 ~~~~~~~~~~
 
-.. automodule:: tsut.components.nodes.metrics.regression.mae
+.. automodule:: nodeml.components.nodes.metrics.regression.mae
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.regression.mse
+.. automodule:: nodeml.components.nodes.metrics.regression.mse
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.regression.r2_score
+.. automodule:: nodeml.components.nodes.metrics.regression.r2_score
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.components.nodes.metrics.regression.mape
+.. automodule:: nodeml.components.nodes.metrics.regression.mape
    :members:
    :undoc-members:
    :show-inheritance:
@@ -190,4 +190,4 @@ Regression
 Sinks
 -----
 
-See :mod:`tsut.core.nodes.data_sink.sink` in the core API reference.
+See :mod:`nodeml.core.nodes.data_sink.sink` in the core API reference.

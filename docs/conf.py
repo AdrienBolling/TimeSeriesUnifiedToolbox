@@ -1,4 +1,4 @@
-"""Sphinx configuration for TSUT documentation."""
+"""Sphinx configuration for NodeML documentation."""
 
 import os
 import sys
@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
 
-project = "TSUT"
+project = "NodeML"
 copyright = "2026, Adrien Bolling"  # noqa: A001
 author = "Adrien Bolling"
 release = "0.1.0"

@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.nodes.transform.transform.TransformNode`."""
+"""Tests for :class:`nodeml.core.nodes.transform.transform.TransformNode`."""
 
 from __future__ import annotations
 

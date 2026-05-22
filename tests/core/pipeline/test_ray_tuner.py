@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.pipeline.tuners.ray_tuner.RayPipelineTuner`.
+"""Tests for :class:`nodeml.core.pipeline.tuners.ray_tuner.RayPipelineTuner`.
 
 These tests exercise the tuner's internals and lifecycle without standing
 up a real Ray cluster:
@@ -18,23 +18,23 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tsut.components.nodes.data_sources.inputs_passthrough import (
+from nodeml.components.nodes.data_sources.inputs_passthrough import (
     InputsPassthroughConfig,
 )
-from tsut.components.nodes.transforms.feature_selection.missing_rate_filter import (
+from nodeml.components.nodes.transforms.feature_selection.missing_rate_filter import (
     MissingRateFilterConfig,
 )
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
     NumericalData,
     TabularDataContext,
 )
-from tsut.core.nodes.data_sink.sink import SinkConfig
-from tsut.core.nodes.node import Port
-from tsut.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
-from tsut.core.pipeline.tuners.ray_tuner import (
+from nodeml.core.nodes.data_sink.sink import SinkConfig
+from nodeml.core.nodes.node import Port
+from nodeml.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
+from nodeml.core.pipeline.tuners.ray_tuner import (
     RayPipelineTuner,
     RayPipelineTunerConfig,
 )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from tsut.core.common.enums import NodeExecutionMode
-from tsut.core.nodes.node import NodeConfig, NodeType, Port
+from nodeml.core.common.enums import NodeExecutionMode
+from nodeml.core.nodes.node import NodeConfig, NodeType, Port
 
 from tests.shims.nodes import (
     ConstantSource,

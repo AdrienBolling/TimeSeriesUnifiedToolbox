@@ -1,1 +1,1 @@
-"""Tests for the built-in component nodes under ``tsut.components``."""
+"""Tests for the built-in component nodes under ``nodeml.components``."""

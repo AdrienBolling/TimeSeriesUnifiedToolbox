@@ -1,6 +1,6 @@
-"""Shared fixtures for the TSUT test suite.
+"""Shared fixtures for the NodeML test suite.
 
-All heavy side-effects (importing ``tsut`` to trigger the auto-discovery
+All heavy side-effects (importing ``nodeml`` to trigger the auto-discovery
 of registered nodes, writing CSV/JSON files to a tmp dir) live here so
 individual test modules can stay lean and declarative.
 """
@@ -16,9 +16,9 @@ import pytest
 
 # Triggers component auto-registration — must happen before any test that
 # looks up nodes in ``NODE_REGISTRY`` by name.
-import tsut  # noqa: F401
+import nodeml  # noqa: F401
 
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     NumericalData,
     TabularData,
     TabularDataContext,

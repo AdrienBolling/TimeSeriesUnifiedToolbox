@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.nodes.metrics.metric_node.MetricNode`.
+"""Tests for :class:`nodeml.core.nodes.metrics.metric_node.MetricNode`.
 
 The abstract :class:`MetricNode` only defines the ``update`` / ``compute``
 contract.  We exercise it through the :class:`SumCountMetric` shim so that
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tsut.core.common.data.data import NumericalData, TabularDataContext
+from nodeml.core.common.data.data import NumericalData, TabularDataContext
 
 from tests.shims.nodes import SumCountMetric, SumCountMetricConfig
 

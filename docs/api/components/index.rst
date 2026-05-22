@@ -1,7 +1,7 @@
 Components
 ==========
 
-.. automodule:: tsut.components
+.. automodule:: nodeml.components
    :members:
    :undoc-members:
    :show-inheritance:

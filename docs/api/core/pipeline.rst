@@ -4,7 +4,7 @@ Pipeline
 Pipeline
 --------
 
-.. automodule:: tsut.core.pipeline.pipeline
+.. automodule:: nodeml.core.pipeline.pipeline
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,12 +12,12 @@ Pipeline
 Runners
 -------
 
-.. automodule:: tsut.core.pipeline.runners.pipeline_runner
+.. automodule:: nodeml.core.pipeline.runners.pipeline_runner
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.core.pipeline.runners.smart_runner
+.. automodule:: nodeml.core.pipeline.runners.smart_runner
    :members:
    :undoc-members:
    :show-inheritance:
@@ -25,7 +25,7 @@ Runners
 Tuners
 ------
 
-.. automodule:: tsut.core.pipeline.tuners.ray_tuner
+.. automodule:: nodeml.core.pipeline.tuners.ray_tuner
    :members:
    :undoc-members:
    :show-inheritance:
@@ -33,7 +33,7 @@ Tuners
 Validation
 ----------
 
-.. automodule:: tsut.core.pipeline.validation.train_val_split
+.. automodule:: nodeml.core.pipeline.validation.train_val_split
    :members:
    :undoc-members:
    :show-inheritance:
@@ -41,7 +41,7 @@ Validation
 Rendering
 ---------
 
-.. automodule:: tsut.core.pipeline.render
+.. automodule:: nodeml.core.pipeline.render
    :members:
    :undoc-members:
    :show-inheritance:

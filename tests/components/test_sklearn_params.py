@@ -1,11 +1,11 @@
-"""Tests for :mod:`tsut.components.utils.sklearn_params`."""
+"""Tests for :mod:`nodeml.components.utils.sklearn_params`."""
 
 from __future__ import annotations
 
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
-from tsut.components.utils.sklearn_params import (
+from nodeml.components.utils.sklearn_params import (
     get_sklearn_fitted_params,
     set_sklearn_fitted_params,
 )

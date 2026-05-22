@@ -1,4 +1,4 @@
-# TSUT Test Suite
+# NodeML Test Suite
 
 ## Layout
 
@@ -37,7 +37,7 @@ tests/
   plumbing.
 * **Tests stay lean** — one behaviour per test function, no hidden state,
   AAA ordering (arrange / act / assert).
-* **Auto-registration** — importing `tsut` in `conftest.py` triggers the
+* **Auto-registration** — importing `nodeml` in `conftest.py` triggers the
   component auto-discovery. Tests that look up nodes by name in the global
   `NODE_REGISTRY` can rely on that import having already happened.
 
@@ -47,7 +47,7 @@ tests/
 uv run pytest                       # full suite
 uv run pytest tests/core            # core only
 uv run pytest -k linear_regression  # name filter
-uv run pytest --cov=tsut            # with coverage
+uv run pytest --cov=nodeml            # with coverage
 ```
 
 ## Adding tests
@@ -57,4 +57,4 @@ uv run pytest --cov=tsut            # with coverage
 * Put reusable Node subclasses or dataset builders under `tests/shims/`;
   they should be deterministic and importable outside pytest.
 * Mirror the package layout: a test for
-  `src/tsut/core/common/foo.py` lives in `tests/core/common/test_foo.py`.
+  `src/nodeml/core/common/foo.py` lives in `tests/core/common/test_foo.py`.

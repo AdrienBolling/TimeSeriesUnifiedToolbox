@@ -2,7 +2,7 @@
 
 Centralising the construction of tabular test data keeps every test file
 working from the same, deterministic inputs. All helpers return
-``(DataFrame, TabularDataContext)`` tuples in the exact shape the TSUT
+``(DataFrame, TabularDataContext)`` tuples in the exact shape the NodeML
 runners expect on a node port.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     CategoricalData,
     MixedData,
     NumericalData,

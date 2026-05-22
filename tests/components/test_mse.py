@@ -1,10 +1,10 @@
-"""Tests for :class:`tsut.components.nodes.metrics.regression.mse.MSE`."""
+"""Tests for :class:`nodeml.components.nodes.metrics.regression.mse.MSE`."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from tsut.components.nodes.metrics.regression.mse import MSE, MSEConfig, MSERunningConfig
+from nodeml.components.nodes.metrics.regression.mse import MSE, MSEConfig, MSERunningConfig
 
 
 class TestMSE:

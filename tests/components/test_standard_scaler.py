@@ -1,11 +1,11 @@
-"""Tests for :class:`tsut.components.nodes.transforms.scalers.standard_scaler.StandardScaler`."""
+"""Tests for :class:`nodeml.components.nodes.transforms.scalers.standard_scaler.StandardScaler`."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from tsut.components.nodes.transforms.scalers.standard_scaler import (
+from nodeml.components.nodes.transforms.scalers.standard_scaler import (
     StandardScaler,
     StandardScalerConfig,
 )

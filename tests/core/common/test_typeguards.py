@@ -1,4 +1,4 @@
-"""Tests for the runtime typeguards in ``tsut.core.common.typechecking``.
+"""Tests for the runtime typeguards in ``nodeml.core.common.typechecking``.
 
 These tests lean heavily on the Node shims in :mod:`tests.shims.nodes` so
 we exercise the typeguards against real Node instances (not Mocks).
@@ -6,11 +6,11 @@ we exercise the typeguards against real Node instances (not Mocks).
 
 from __future__ import annotations
 
-from tsut.components.nodes.data_sources.inputs_passthrough import (
+from nodeml.components.nodes.data_sources.inputs_passthrough import (
     InputsPassthrough,
     InputsPassthroughConfig,
 )
-from tsut.core.common.typechecking.typeguards import (
+from nodeml.core.common.typechecking.typeguards import (
     accepts_inputs_source_node,
     has_hyperparameters,
     has_hyperparameters_config,

@@ -1,1 +1,1 @@
-"""Tests for shared utilities living under ``tsut.core.common``."""
+"""Tests for shared utilities living under ``nodeml.core.common``."""

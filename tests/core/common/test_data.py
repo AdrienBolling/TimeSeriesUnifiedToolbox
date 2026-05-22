@@ -1,4 +1,4 @@
-"""Tests for ``tsut.core.common.data.data``.
+"""Tests for ``nodeml.core.common.data.data``.
 
 Covers the :class:`TabularData` wrapper (conversion between pandas, numpy,
 and torch backends) and the :class:`TabularDataContext` (serialisation,
@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import torch
 
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     DATA_CATEGORY_MAPPING,
     INVERSE_DATA_CATEGORY_MAPPING,
     ArrayLikeEnum,

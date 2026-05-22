@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.pipeline.runners.wrappers.wrapper.PipelineRunnerWrapper`.
+"""Tests for :class:`nodeml.core.pipeline.runners.wrappers.wrapper.PipelineRunnerWrapper`.
 
 The wrapper is an abstract base class, so we drive it through a trivial
 identity subclass whose only job is to forward every call to the
@@ -12,10 +12,10 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel
 
-from tsut.core.common.data.data import ArrayLike, DataContext
-from tsut.core.pipeline.runners.pipeline_runner import PipelineRunner
-from tsut.core.pipeline.runners.smart_runner import SmartRunner
-from tsut.core.pipeline.runners.wrappers.wrapper import PipelineRunnerWrapper
+from nodeml.core.common.data.data import ArrayLike, DataContext
+from nodeml.core.pipeline.runners.pipeline_runner import PipelineRunner
+from nodeml.core.pipeline.runners.smart_runner import SmartRunner
+from nodeml.core.pipeline.runners.wrappers.wrapper import PipelineRunnerWrapper
 
 from tests.shims.pipelines import build_source_model_sink_pipeline
 

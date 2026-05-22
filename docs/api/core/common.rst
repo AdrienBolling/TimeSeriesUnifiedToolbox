@@ -4,7 +4,7 @@ Common
 Data Types
 ----------
 
-.. automodule:: tsut.core.common.data.data
+.. automodule:: nodeml.core.common.data.data
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,7 +12,7 @@ Data Types
 Enums
 -----
 
-.. automodule:: tsut.core.common.enums
+.. automodule:: nodeml.core.common.enums
    :members:
    :undoc-members:
    :show-inheritance:
@@ -20,7 +20,7 @@ Enums
 Exceptions
 ----------
 
-.. automodule:: tsut.core.common.exceptions
+.. automodule:: nodeml.core.common.exceptions
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,12 +28,12 @@ Exceptions
 Registry
 --------
 
-.. automodule:: tsut.core.common.registry
+.. automodule:: nodeml.core.common.registry
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.core.common.registry_display
+.. automodule:: nodeml.core.common.registry_display
    :members:
    :undoc-members:
    :show-inheritance:
@@ -41,7 +41,7 @@ Registry
 Version
 -------
 
-.. automodule:: tsut.core.common.version
+.. automodule:: nodeml.core.common.version
    :members:
    :undoc-members:
    :show-inheritance:
@@ -49,12 +49,12 @@ Version
 Type Checking
 -------------
 
-.. automodule:: tsut.core.common.typechecking.protocols
+.. automodule:: nodeml.core.common.typechecking.protocols
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: tsut.core.common.typechecking.typeguards
+.. automodule:: nodeml.core.common.typechecking.typeguards
    :members:
    :undoc-members:
    :show-inheritance:
@@ -62,7 +62,7 @@ Type Checking
 Logging
 -------
 
-.. automodule:: tsut.core.common.logging.logger
+.. automodule:: nodeml.core.common.logging.logger
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,8 +1,8 @@
-"""Tests for the tiny :class:`tsut.core.common.version.Version` model."""
+"""Tests for the tiny :class:`nodeml.core.common.version.Version` model."""
 
 from __future__ import annotations
 
-from tsut.core.common.version import Version
+from nodeml.core.common.version import Version
 
 
 def test_version_str_is_semver() -> None:

@@ -7,19 +7,19 @@ train / evaluate / infer.
 
 from __future__ import annotations
 
-from tsut.components.nodes.data_sources.inputs_passthrough import (
+from nodeml.components.nodes.data_sources.inputs_passthrough import (
     InputsPassthroughConfig,
 )
-from tsut.core.common.data.data import (
+from nodeml.core.common.data.data import (
     ArrayLikeEnum,
     DataCategoryEnum,
     DataStructureEnum,
 )
-from tsut.core.common.enums import NodeExecutionMode
-from tsut.core.nodes.data_sink.sink import SinkConfig
-from tsut.core.nodes.node import NodeConfig, Port
-from tsut.core.nodes.registry.node_registry import NODE_REGISTRY
-from tsut.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
+from nodeml.core.common.enums import NodeExecutionMode
+from nodeml.core.nodes.data_sink.sink import SinkConfig
+from nodeml.core.nodes.node import NodeConfig, Port
+from nodeml.core.nodes.registry.node_registry import NODE_REGISTRY
+from nodeml.core.pipeline.pipeline import Edge, Pipeline, PipelineConfig
 
 
 def _inputs_passthrough_config(

@@ -1,4 +1,4 @@
-TSUT - Time Series Unified Toolbox
+NodeML
 ===================================
 
 .. toctree::

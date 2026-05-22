@@ -1,10 +1,10 @@
-"""Tests for :class:`tsut.core.nodes.models.model.Model`."""
+"""Tests for :class:`nodeml.core.nodes.models.model.Model`."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from tsut.core.common.data.data import NumericalData, TabularDataContext
+from nodeml.core.common.data.data import NumericalData, TabularDataContext
 
 from tests.shims.nodes import MeanModel, MeanModelConfig
 

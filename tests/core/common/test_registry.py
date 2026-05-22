@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.common.registry.Registry` CRUD behaviour.
+"""Tests for :class:`nodeml.core.common.registry.Registry` CRUD behaviour.
 
 These tests exercise the generic CRUD layer in isolation, without any
 node-specific schema.  Node-level registration concerns (entity class +
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tsut.core.common.registry import Registry
+from nodeml.core.common.registry import Registry
 
 
 class _Dummy:

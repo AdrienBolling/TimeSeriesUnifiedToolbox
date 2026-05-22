@@ -1,10 +1,10 @@
-"""Tests for :class:`tsut.components.nodes.models.linear_regression.LinearRegressionNode`."""
+"""Tests for :class:`nodeml.components.nodes.models.linear_regression.LinearRegressionNode`."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from tsut.components.nodes.models.linear_regression import (
+from nodeml.components.nodes.models.linear_regression import (
     LinearRegressionConfig,
     LinearRegressionNode,
 )

@@ -1,1 +1,1 @@
-"""Tests for the Node base classes under ``tsut.core.nodes``."""
+"""Tests for the Node base classes under ``nodeml.core.nodes``."""

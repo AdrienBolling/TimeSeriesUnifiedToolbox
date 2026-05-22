@@ -1,4 +1,4 @@
-"""Tests for :class:`tsut.core.pipeline.runners.smart_runner.SmartRunner`.
+"""Tests for :class:`nodeml.core.pipeline.runners.smart_runner.SmartRunner`.
 
 These tests run an end-to-end pipeline
 (``InputsPassthrough`` → ``LinearRegression`` → ``Sink`` + optional ``MSE``
@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from tsut.core.pipeline.runners.smart_runner import SmartRunner
+from nodeml.core.pipeline.runners.smart_runner import SmartRunner
 
 from tests.shims.pipelines import build_source_model_sink_pipeline
 
@@ -23,7 +23,7 @@ from tests.shims.pipelines import build_source_model_sink_pipeline
 
 class TestSmartRunnerPrecompilation:
     def test_runner_requires_compiled_pipeline(self) -> None:
-        from tsut.core.pipeline.pipeline import Pipeline
+        from nodeml.core.pipeline.pipeline import Pipeline
 
         # A brand-new, non-compiled pipeline must be rejected.
         with pytest.raises(ValueError, match="compiled"):

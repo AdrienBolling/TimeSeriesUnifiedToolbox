@@ -7,7 +7,7 @@ import json
 import pandas as pd
 import pytest
 
-from tsut.components.nodes.data_sources.tabular_csv_fetcher import (
+from nodeml.components.nodes.data_sources.tabular_csv_fetcher import (
     TabularCSVFetcher,
     TabularCSVFetcherConfig,
     TabularCSVFetcherRunningConfig,
